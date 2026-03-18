@@ -38,6 +38,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  */
 class Feedback extends Model
 {
+    protected $table = 'feedbacks';
+
     protected $fillable = [
         'counter_id',
         'counter_session_id',
@@ -212,7 +214,7 @@ class Feedback extends Model
         $score = max(-1.0, min(1.0, $score));
 
         // Step 4: Derive label from score
-        $label = match(true) {
+        $label = match (true) {
             $score >= 0.6  => 'very_positive',
             $score >= 0.2  => 'positive',
             $score >= -0.2 => 'neutral',

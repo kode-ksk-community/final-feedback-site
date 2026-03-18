@@ -2,10 +2,15 @@
 
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use App\Http\Controllers\BranchController;
+use App\Http\Controllers\CounterController;
+use App\Http\Controllers\UserController;
 
 Route::get('/', function () {
+    return Inertia::render('landing-page');
+})->name('home');
+Route::get('/counter', function () {
     return Inertia::render('client/CounterSetup');
-    // return Inertia::render('welcome');
 })->name('home');
 
 Route::get('/waiting', function () {
@@ -24,20 +29,40 @@ Route::get('/servicer-activation', function () {
 
 
 Route::get('/admin/dashboard', function () {
-    return Inertia::render('admin/Managerdashboard');
+    return Inertia::render('admin/dashboard');
 });
-
-Route::get('/admin/users', function () {
-    return Inertia::render('admin/users');
-});
+Route::get('/admin/users', [UserController::class, 'index'])->name('admin.users.index');
 Route::get('/admin/tags', function () {
     return Inertia::render('admin/tags');
 });
-Route::get('/admin/branches', function () {
-    return Inertia::render('admin/branches');
+Route::get('/admin/branches', [BranchController::class, 'index'])->name('admin.branches.index');
+Route::get('/admin/counters', [CounterController::class, 'index'])->name('admin.counters.index');
+
+// Admin API routes for branches CRUD
+Route::middleware(['auth'])->group(function () {
+    Route::post('/admin/branches', [BranchController::class, 'store'])->name('admin.branches.store');
+    Route::put('/admin/branches/{branch}', [BranchController::class, 'update'])->name('admin.branches.update');
+    Route::patch('/admin/branches/{branch}/toggle', [BranchController::class, 'toggle'])->name('admin.branches.toggle');
+    Route::delete('/admin/branches/{branch}', [BranchController::class, 'destroy'])->name('admin.branches.destroy');
 });
-Route::get('/admin/counters', function () {
-    return Inertia::render('admin/counters');
+
+// Admin API routes for counters CRUD
+Route::middleware(['auth'])->group(function () {
+    Route::post('/admin/counters', [CounterController::class, 'store'])->name('admin.counters.store');
+    Route::put('/admin/counters/{counter}', [CounterController::class, 'update'])->name('admin.counters.update');
+    Route::patch('/admin/counters/{counter}/toggle', [CounterController::class, 'toggle'])->name('admin.counters.toggle');
+    Route::patch('/admin/counters/{counter}/force-end-session', [CounterController::class, 'forceEndSession'])->name('admin.counters.force-end-session');
+    Route::delete('/admin/counters/{counter}', [CounterController::class, 'destroy'])->name('admin.counters.destroy');
+});
+
+// Admin API routes for users CRUD
+Route::middleware(['auth'])->group(function () {
+    Route::post('/admin/users', [UserController::class, 'store'])->name('admin.users.store');
+    Route::put('/admin/users/{user}', [UserController::class, 'update'])->name('admin.users.update');
+    Route::patch('/admin/users/{user}/toggle', [UserController::class, 'toggle'])->name('admin.users.toggle');
+    Route::post('/admin/users/{user}/generate-qr-token', [UserController::class, 'generateQrToken'])->name('admin.users.generate-qr-token');
+    Route::post('/admin/users/{user}/revoke-qr-token', [UserController::class, 'revokeQrToken'])->name('admin.users.revoke-qr-token');
+    Route::delete('/admin/users/{user}', [UserController::class, 'destroy'])->name('admin.users.destroy');
 });
 
 Route::middleware(['auth'])->group(function () {
@@ -46,5 +71,5 @@ Route::middleware(['auth'])->group(function () {
     })->name('dashboard');
 });
 
-require __DIR__.'/settings.php';
-require __DIR__.'/auth.php';
+require __DIR__ . '/settings.php';
+require __DIR__ . '/auth.php';

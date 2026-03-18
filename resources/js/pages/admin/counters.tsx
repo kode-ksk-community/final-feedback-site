@@ -13,12 +13,14 @@
  *   - PIN auto-generator button
  *   - Occupied / Idle status badge (from active session)
  *   - Force-end active session action
+ *   - Feedback count badge per counter
  *
- * 🔧 STATIC MODE: All data hardcoded. Search "TODO: REPLACE" for swap points.
+ * ✅ DYNAMIC MODE: Fully integrated with Laravel backend via Inertia.js
  */
 
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { router } from "@inertiajs/react";
 import toast, { Toaster } from "react-hot-toast";
 import AdminLayout from "../Layouts/AdminLayout";
 
@@ -39,38 +41,27 @@ interface Counter {
 
 interface Branch { id: number; name: string; }
 
-// ─── 🔧 Mock Data ─────────────────────────────────────────────────────────────
+// ─── Props from Inertia ───────────────────────────────────────────────────────
 
-const MOCK_BRANCHES: Branch[] = [
-  { id: 1, name: "Main Branch"  },
-  { id: 2, name: "North Branch" },
-  { id: 3, name: "East Branch"  },
-];
-
-const INITIAL: Counter[] = [
-  { id:1, branch_id:1, branch_name:"Main Branch",  name:"Counter 1", description:"Ground floor, main entrance", is_active:true,  is_occupied:true,  current_servicer:"Sophea Chan", feedback_count:520, created_at:"2024-01-15" },
-  { id:2, branch_id:1, branch_name:"Main Branch",  name:"Counter 2", description:"Ground floor, left side",    is_active:true,  is_occupied:false, current_servicer:null,          feedback_count:380, created_at:"2024-01-15" },
-  { id:3, branch_id:1, branch_name:"Main Branch",  name:"Counter 3", description:"First floor, right wing",   is_active:true,  is_occupied:false, current_servicer:null,          feedback_count:210, created_at:"2024-02-01" },
-  { id:4, branch_id:2, branch_name:"North Branch", name:"Counter 1", description:"Main service desk",         is_active:true,  is_occupied:true,  current_servicer:"Dara Lim",    feedback_count:445, created_at:"2024-02-20" },
-  { id:5, branch_id:2, branch_name:"North Branch", name:"Counter 2", description:"Near the entrance",        is_active:false, is_occupied:false, current_servicer:null,          feedback_count:180, created_at:"2024-03-01" },
-  { id:6, branch_id:3, branch_name:"East Branch",  name:"Counter 1", description:"Ground floor",             is_active:true,  is_occupied:false, current_servicer:null,          feedback_count:210, created_at:"2024-03-10" },
-];
+interface Props {
+  counters: Counter[];
+  branches: Branch[];
+}
 
 // ─── Drawer ───────────────────────────────────────────────────────────────────
 
-function CounterDrawer({ counter, branches, onClose, onSave }: {
+function CounterDrawer({ counter, branches, onClose }: {
   counter: Partial<Counter> | null;
   branches: Branch[];
   onClose: () => void;
-  onSave: (data: Partial<Counter>) => void;
 }) {
   const isEdit = !!counter?.id;
   const [form, setForm] = useState({
-    branch_id:   counter?.branch_id   ?? branches[0]?.id ?? 1,
-    name:        counter?.name        ?? "",
+    branch_id: counter?.branch_id ?? branches[0]?.id ?? 1,
+    name: counter?.name ?? "",
     description: counter?.description ?? "",
-    pin:         "",   // PIN is never pre-filled for security
-    is_active:   counter?.is_active   ?? true,
+    pin: "",   // PIN is never pre-filled for security
+    is_active: counter?.is_active ?? true,
   });
   const [saving, setSaving] = useState(false);
   const [showPin, setShowPin] = useState(false);
@@ -85,15 +76,38 @@ function CounterDrawer({ counter, branches, onClose, onSave }: {
     if (!form.name.trim()) { toast.error("Counter name is required"); return; }
     if (!isEdit && !form.pin) { toast.error("PIN is required for new counters"); return; }
     setSaving(true);
-    // TODO: REPLACE with:
-    // isEdit
-    //   ? router.put(route('admin.counters.update', counter.id), form, { onSuccess: onClose })
-    //   : router.post(route('admin.counters.store'), form, { onSuccess: onClose });
-    await new Promise(r => setTimeout(r, 700));
-    const branch = branches.find(b => b.id === form.branch_id);
-    onSave({ ...counter, ...form, branch_name: branch?.name ?? "" });
-    setSaving(false);
-    onClose();
+    try {
+      if (isEdit && counter?.id) {
+        router.put(route('admin.counters.update', counter.id), form, {
+          onSuccess: () => {
+            toast.success("Counter updated!");
+            onClose();
+            window.location.reload();
+          },
+          onError: (errors) => {
+            toast.error("Failed to update counter");
+            console.error(errors);
+          }
+        });
+      } else {
+        router.post(route('admin.counters.store'), form, {
+          onSuccess: () => {
+            toast.success("Counter created!");
+            onClose();
+            window.location.reload();
+          },
+          onError: (errors) => {
+            toast.error("Failed to create counter");
+            console.error(errors);
+          }
+        });
+      }
+    } catch (error) {
+      toast.error("An error occurred");
+      console.error(error);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -109,8 +123,10 @@ function CounterDrawer({ counter, branches, onClose, onSave }: {
         <div className="flex items-center justify-between px-7 py-5"
           style={{ borderBottom: "1px solid #f1f5f9" }}>
           <div>
-            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: "17px",
-              fontWeight: 800, color: "#0f172a", marginBottom: "2px" }}>
+            <h2 style={{
+              fontFamily: "'Syne', sans-serif", fontSize: "17px",
+              fontWeight: 800, color: "#0f172a", marginBottom: "2px"
+            }}>
               {isEdit ? "Edit Counter" : "New Counter"}
             </h2>
             <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: "#94a3b8" }}>
@@ -118,9 +134,11 @@ function CounterDrawer({ counter, branches, onClose, onSave }: {
             </p>
           </div>
           <button onClick={onClose}
-            style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10,
+            style={{
+              background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10,
               width: 32, height: 32, cursor: "pointer", display: "flex",
-              alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: "16px" }}>
+              alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: "16px"
+            }}>
             ✕
           </button>
         </div>
@@ -129,16 +147,20 @@ function CounterDrawer({ counter, branches, onClose, onSave }: {
 
           {/* Branch selector */}
           <div>
-            <label style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-              fontWeight: 600, color: "#374151", display: "block", marginBottom: "7px" }}>
+            <label style={{
+              fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+              fontWeight: 600, color: "#374151", display: "block", marginBottom: "7px"
+            }}>
               Branch *
             </label>
             <select value={form.branch_id}
               onChange={e => setForm(p => ({ ...p, branch_id: Number(e.target.value) }))}
-              style={{ width: "100%", padding: "11px 14px", borderRadius: 12,
+              style={{
+                width: "100%", padding: "11px 14px", borderRadius: 12,
                 border: "1.5px solid #e2e8f0", background: "#fafbfc",
                 fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                color: "#0f172a", outline: "none", cursor: "pointer" }}>
+                color: "#0f172a", outline: "none", cursor: "pointer"
+              }}>
               {branches.map(b => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
@@ -147,61 +169,75 @@ function CounterDrawer({ counter, branches, onClose, onSave }: {
 
           {/* Name + Description */}
           {[
-            { key: "name",        label: "Counter Name *",  placeholder: "e.g. Counter 1" },
-            { key: "description", label: "Description",     placeholder: "e.g. Ground floor, near entrance" },
+            { key: "name", label: "Counter Name *", placeholder: "e.g. Counter 1" },
+            { key: "description", label: "Description", placeholder: "e.g. Ground floor, near entrance" },
           ].map(f => (
             <div key={f.key}>
-              <label style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-                fontWeight: 600, color: "#374151", display: "block", marginBottom: "7px" }}>
+              <label style={{
+                fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+                fontWeight: 600, color: "#374151", display: "block", marginBottom: "7px"
+              }}>
                 {f.label}
               </label>
               <input value={(form as any)[f.key]}
                 onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
                 placeholder={f.placeholder}
-                style={{ width: "100%", padding: "11px 14px", borderRadius: 12,
+                style={{
+                  width: "100%", padding: "11px 14px", borderRadius: 12,
                   border: "1.5px solid #e2e8f0", background: "#fafbfc",
                   fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                  color: "#0f172a", outline: "none", transition: "border-color .2s" }}
+                  color: "#0f172a", outline: "none", transition: "border-color .2s"
+                }}
                 onFocus={e => (e.target.style.borderColor = "#0f172a")}
-                onBlur={e  => (e.target.style.borderColor = "#e2e8f0")}
+                onBlur={e => (e.target.style.borderColor = "#e2e8f0")}
               />
             </div>
           ))}
 
           {/* PIN field */}
           <div>
-            <label style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-              fontWeight: 600, color: "#374151", display: "block", marginBottom: "7px" }}>
+            <label style={{
+              fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+              fontWeight: 600, color: "#374151", display: "block", marginBottom: "7px"
+            }}>
               {isEdit ? "New PIN (leave blank to keep current)" : "Counter PIN *"}
             </label>
             <div className="flex gap-2">
               <input type={showPin ? "text" : "password"}
                 value={form.pin}
-                onChange={e => setForm(p => ({ ...p, pin: e.target.value.replace(/\D/g,"").slice(0,6) }))}
+                onChange={e => setForm(p => ({ ...p, pin: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
                 placeholder="4–6 digit PIN"
                 maxLength={6}
-                style={{ flex: 1, padding: "11px 14px", borderRadius: 12,
+                style={{
+                  flex: 1, padding: "11px 14px", borderRadius: 12,
                   border: "1.5px solid #e2e8f0", background: "#fafbfc",
                   fontFamily: "'DM Mono', monospace", fontSize: "16px",
-                  letterSpacing: "0.2em", color: "#0f172a", outline: "none" }}
+                  letterSpacing: "0.2em", color: "#0f172a", outline: "none"
+                }}
                 onFocus={e => (e.target.style.borderColor = "#0f172a")}
-                onBlur={e  => (e.target.style.borderColor = "#e2e8f0")}
+                onBlur={e => (e.target.style.borderColor = "#e2e8f0")}
               />
               <button onClick={() => setShowPin(p => !p)}
-                style={{ padding: "0 14px", borderRadius: 12, border: "1.5px solid #e2e8f0",
-                  background: "#fafbfc", cursor: "pointer", fontSize: "16px" }}>
+                style={{
+                  padding: "0 14px", borderRadius: 12, border: "1.5px solid #e2e8f0",
+                  background: "#fafbfc", cursor: "pointer", fontSize: "16px"
+                }}>
                 {showPin ? "🙈" : "👁"}
               </button>
               <button onClick={generatePin}
-                style={{ padding: "0 14px", borderRadius: 12, border: "none",
+                style={{
+                  padding: "0 14px", borderRadius: 12, border: "none",
                   background: "#0f172a", color: "#fff",
                   fontFamily: "'DM Mono', monospace", fontSize: "11px",
-                  cursor: "pointer", whiteSpace: "nowrap" }}>
+                  cursor: "pointer", whiteSpace: "nowrap"
+                }}>
                 Generate
               </button>
             </div>
-            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "11px",
-              color: "#94a3b8", marginTop: 6 }}>
+            <p style={{
+              fontFamily: "'DM Sans', sans-serif", fontSize: "11px",
+              color: "#94a3b8", marginTop: 6
+            }}>
               PIN is hashed before storage. Share it securely with staff.
             </p>
           </div>
@@ -210,40 +246,52 @@ function CounterDrawer({ counter, branches, onClose, onSave }: {
           <div className="flex items-center justify-between p-4 rounded-2xl"
             style={{ background: "#f8fafc", border: "1px solid #f1f5f9" }}>
             <div>
-              <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                fontWeight: 600, color: "#374151", marginBottom: "2px" }}>Active</p>
+              <p style={{
+                fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
+                fontWeight: 600, color: "#374151", marginBottom: "2px"
+              }}>Active</p>
               <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: "#94a3b8" }}>
                 Inactive counters won't appear in device setup
               </p>
             </div>
             <button onClick={() => setForm(p => ({ ...p, is_active: !p.is_active }))}
-              style={{ width: 44, height: 24, borderRadius: 12, border: "none", position: "relative",
-                background: form.is_active ? "#22c55e" : "#d1d5db", cursor: "pointer" }}>
+              style={{
+                width: 44, height: 24, borderRadius: 12, border: "none", position: "relative",
+                background: form.is_active ? "#22c55e" : "#d1d5db", cursor: "pointer"
+              }}>
               <motion.div animate={{ left: form.is_active ? 22 : 2 }}
                 transition={{ type: "spring", stiffness: 500, damping: 32 }}
-                style={{ position: "absolute", top: 2, width: 20, height: 20,
-                  borderRadius: "50%", background: "#ffffff", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }} />
+                style={{
+                  position: "absolute", top: 2, width: 20, height: 20,
+                  borderRadius: "50%", background: "#ffffff", boxShadow: "0 1px 4px rgba(0,0,0,0.15)"
+                }} />
             </button>
           </div>
         </div>
 
         <div className="px-7 py-5 flex gap-3" style={{ borderTop: "1px solid #f1f5f9" }}>
           <button onClick={onClose}
-            style={{ flex: 1, padding: "11px", borderRadius: 12,
+            style={{
+              flex: 1, padding: "11px", borderRadius: 12,
               border: "1.5px solid #e2e8f0", background: "transparent",
               fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-              fontWeight: 600, color: "#64748b", cursor: "pointer" }}>
+              fontWeight: 600, color: "#64748b", cursor: "pointer"
+            }}>
             Cancel
           </button>
           <button onClick={handleSave} disabled={saving}
-            style={{ flex: 2, padding: "11px", borderRadius: 12, border: "none",
+            style={{
+              flex: 2, padding: "11px", borderRadius: 12, border: "none",
               background: saving ? "#d1d5db" : "#0f172a",
               fontFamily: "'Syne', sans-serif", fontSize: "13px", fontWeight: 700,
               color: "#ffffff", cursor: saving ? "not-allowed" : "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8
+            }}>
             {saving
-              ? <><div style={{ width:14,height:14,borderRadius:"50%",border:"2px solid rgba(255,255,255,.4)",
-                  borderTopColor:"#fff",animation:"spin .7s linear infinite"}}/> Saving...</>
+              ? <><div style={{
+                width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,.4)",
+                borderTopColor: "#fff", animation: "spin .7s linear infinite"
+              }} /> Saving...</>
               : isEdit ? "Save Changes" : "Create Counter"}
           </button>
         </div>
@@ -254,50 +302,59 @@ function CounterDrawer({ counter, branches, onClose, onSave }: {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function AdminCounters() {
-  const [counters,      setCounters]      = useState<Counter[]>(INITIAL);
-  const [search,        setSearch]        = useState("");
-  const [filterBranch,  setFilterBranch]  = useState<number | "all">("all");
-  const [drawer,        setDrawer]        = useState<Partial<Counter> | null>(null);
-  const [deleteTarget,  setDeleteTarget]  = useState<Counter | null>(null);
+export default function AdminCounters({ counters: initialCounters, branches }: Props) {
+  const [counters, setCounters] = useState<Counter[]>(initialCounters);
+  const [search, setSearch] = useState("");
+  const [filterBranch, setFilterBranch] = useState<number | "all">("all");
+  const [drawer, setDrawer] = useState<Partial<Counter> | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Counter | null>(null);
 
   const filtered = useMemo(() => counters
     .filter(c => c.name.toLowerCase().includes(search.toLowerCase()) ||
-                 c.branch_name.toLowerCase().includes(search.toLowerCase()))
+      c.branch_name.toLowerCase().includes(search.toLowerCase()))
     .filter(c => filterBranch === "all" ? true : c.branch_id === filterBranch),
     [counters, search, filterBranch]);
 
-  const handleSave = (data: Partial<Counter>) => {
-    if (data.id) {
-      setCounters(p => p.map(c => c.id === data.id ? { ...c, ...data } : c));
-      toast.success("Counter updated!");
-    } else {
-      setCounters(p => [...p, { ...data, id: Date.now(), is_occupied: false,
-        current_servicer: null, feedback_count: 0,
-        created_at: new Date().toISOString().slice(0,10) } as Counter]);
-      toast.success("Counter created!");
-    }
+  const handleForceEnd = (counter: Counter) => {
+    router.patch(route('admin.counters.force-end-session', counter.id), {}, {
+      onSuccess: () => {
+        window.location.reload();
+      },
+      onError: () => {
+        toast.error("Failed to end session");
+      }
+    });
   };
 
-  const handleForceEnd = (counter: Counter) => {
-    // TODO: REPLACE with: router.post(route('admin.counters.force-end', counter.id))
-    setCounters(p => p.map(c => c.id === counter.id
-      ? { ...c, is_occupied: false, current_servicer: null } : c));
-    toast.success(`Session ended on ${counter.name}`);
+  const handleToggleActive = (counter: Counter) => {
+    router.patch(route('admin.counters.toggle', counter.id), {}, {
+      onSuccess: () => {
+        window.location.reload();
+      },
+      onError: () => {
+        toast.error("Failed to toggle counter status");
+      }
+    });
   };
 
   const handleDelete = () => {
     if (!deleteTarget) return;
-    setCounters(p => p.filter(c => c.id !== deleteTarget.id));
-    toast.success(`${deleteTarget.name} deleted`);
-    setDeleteTarget(null);
+    router.delete(route('admin.counters.destroy', deleteTarget.id), {
+      onSuccess: () => {
+        window.location.reload();
+      },
+      onError: (errors) => {
+        toast.error("Failed to delete counter");
+        setDeleteTarget(null);
+      }
+    });
   };
 
   return (
     <AdminLayout title="Counters" active="counters">
       <Toaster position="top-right" toastOptions={{
         style: { fontFamily: "'DM Sans', sans-serif", borderRadius: "12px", fontSize: "13px" },
-      }}/>
+      }} />
 
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
@@ -306,42 +363,52 @@ export default function AdminCounters() {
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "#94a3b8" }}>🔍</span>
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search counters..."
-              style={{ paddingLeft:34,paddingRight:14,paddingTop:9,paddingBottom:9,
-                borderRadius:12,border:"1.5px solid #e2e8f0",background:"#ffffff",
-                fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:"#0f172a",
-                outline:"none",width:200 }}
-              onFocus={e=>(e.target.style.borderColor="#0f172a")}
-              onBlur={e=>(e.target.style.borderColor="#e2e8f0")}
+              style={{
+                paddingLeft: 34, paddingRight: 14, paddingTop: 9, paddingBottom: 9,
+                borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#ffffff",
+                fontFamily: "'DM Sans',sans-serif", fontSize: "13px", color: "#0f172a",
+                outline: "none", width: 200
+              }}
+              onFocus={e => (e.target.style.borderColor = "#0f172a")}
+              onBlur={e => (e.target.style.borderColor = "#e2e8f0")}
             />
           </div>
           <select value={filterBranch} onChange={e => setFilterBranch(e.target.value === "all" ? "all" : Number(e.target.value))}
-            style={{ padding:"8px 14px",borderRadius:12,border:"1.5px solid #e2e8f0",
-              background:"#ffffff",fontFamily:"'DM Sans',sans-serif",fontSize:"13px",
-              color:"#374151",outline:"none",cursor:"pointer" }}>
+            style={{
+              padding: "8px 14px", borderRadius: 12, border: "1.5px solid #e2e8f0",
+              background: "#ffffff", fontFamily: "'DM Sans',sans-serif", fontSize: "13px",
+              color: "#374151", outline: "none", cursor: "pointer"
+            }}>
             <option value="all">All Branches</option>
-            {MOCK_BRANCHES.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
           onClick={() => setDrawer({})}
-          style={{ padding:"9px 20px",borderRadius:12,border:"none",background:"#0f172a",
-            color:"#ffffff",fontFamily:"'Syne',sans-serif",fontSize:"13px",
-            fontWeight:700,cursor:"pointer" }}>
+          style={{
+            padding: "9px 20px", borderRadius: 12, border: "none", background: "#0f172a",
+            color: "#ffffff", fontFamily: "'Syne',sans-serif", fontSize: "13px",
+            fontWeight: 700, cursor: "pointer"
+          }}>
           + New Counter
         </motion.button>
       </div>
 
       {/* Table */}
       <div className="rounded-2xl overflow-hidden"
-        style={{ background:"#ffffff",border:"1px solid #e2e8f0",
-          boxShadow:"0 1px 6px rgba(0,0,0,0.04)" }}>
-        <table style={{ width:"100%",borderCollapse:"collapse" }}>
+        style={{
+          background: "#ffffff", border: "1px solid #e2e8f0",
+          boxShadow: "0 1px 6px rgba(0,0,0,0.04)"
+        }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ background:"#f8fafc",borderBottom:"1px solid #e2e8f0" }}>
-              {["Counter","Branch","Status","Feedback","Actions"].map(h => (
-                <th key={h} style={{ padding:"12px 16px",textAlign:"left",
-                  fontFamily:"'DM Mono',monospace",fontSize:"10px",
-                  color:"#94a3b8",letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:500 }}>
+            <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+              {["Counter", "Branch", "Status", "Feedback", "Actions"].map(h => (
+                <th key={h} style={{
+                  padding: "12px 16px", textAlign: "left",
+                  fontFamily: "'DM Mono',monospace", fontSize: "10px",
+                  color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 500
+                }}>
                   {h}
                 </th>
               ))}
@@ -350,88 +417,117 @@ export default function AdminCounters() {
           <tbody>
             <AnimatePresence>
               {filtered.length === 0 ? (
-                <tr><td colSpan={5} style={{ padding:"48px",textAlign:"center",
-                  fontFamily:"'DM Sans',sans-serif",fontSize:"14px",color:"#94a3b8" }}>
+                <tr><td colSpan={5} style={{
+                  padding: "48px", textAlign: "center",
+                  fontFamily: "'DM Sans',sans-serif", fontSize: "14px", color: "#94a3b8"
+                }}>
                   No counters found
                 </td></tr>
               ) : filtered.map((counter, i) => (
                 <motion.tr key={counter.id}
-                  initial={{ opacity:0,y:8 }} animate={{ opacity:1,y:0 }} exit={{ opacity:0 }}
-                  transition={{ delay:i*0.04 }}
-                  style={{ borderBottom:"1px solid #f1f5f9" }}
-                  onMouseEnter={e=>(e.currentTarget.style.background="#fafbfc")}
-                  onMouseLeave={e=>(e.currentTarget.style.background="transparent")}
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  transition={{ delay: i * 0.04 }}
+                  style={{ borderBottom: "1px solid #f1f5f9" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "#fafbfc")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                 >
-                  <td style={{ padding:"14px 16px" }}>
+                  <td style={{ padding: "14px 16px" }}>
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm"
-                        style={{ background:"#f0f9ff",flexShrink:0 }}>🖥️</div>
+                        style={{ background: "#f0f9ff", flexShrink: 0 }}>🖥️</div>
                       <div>
-                        <p style={{ fontFamily:"'Syne',sans-serif",fontSize:"13px",
-                          fontWeight:700,color:"#0f172a" }}>{counter.name}</p>
-                        <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:"11px",
-                          color:"#94a3b8" }}>{counter.description ?? "—"}</p>
+                        <p style={{
+                          fontFamily: "'Syne',sans-serif", fontSize: "13px",
+                          fontWeight: 700, color: "#0f172a"
+                        }}>{counter.name}</p>
+                        <p style={{
+                          fontFamily: "'DM Sans',sans-serif", fontSize: "11px",
+                          color: "#94a3b8"
+                        }}>{counter.description ?? "—"}</p>
                       </div>
                     </div>
                   </td>
-                  <td style={{ padding:"14px 16px" }}>
-                    <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:"12px",
-                      color:"#64748b" }}>{counter.branch_name}</span>
+                  <td style={{ padding: "14px 16px" }}>
+                    <span style={{
+                      fontFamily: "'DM Sans',sans-serif", fontSize: "12px",
+                      color: "#64748b"
+                    }}>{counter.branch_name}</span>
                   </td>
-                  <td style={{ padding:"14px 16px" }}>
+                  <td style={{ padding: "14px 16px" }}>
                     {counter.is_occupied ? (
                       <div>
                         <div className="flex items-center gap-1.5 mb-1">
                           <div className="w-1.5 h-1.5 rounded-full"
-                            style={{ background:"#22c55e",boxShadow:"0 0 4px #22c55e" }}/>
-                          <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:"11px",
-                            fontWeight:600,color:"#16a34a" }}>Occupied</span>
+                            style={{ background: "#22c55e", boxShadow: "0 0 4px #22c55e" }} />
+                          <span style={{
+                            fontFamily: "'DM Sans',sans-serif", fontSize: "11px",
+                            fontWeight: 600, color: "#16a34a"
+                          }}>Occupied</span>
                         </div>
-                        <p style={{ fontFamily:"'DM Mono',monospace",fontSize:"10px",color:"#94a3b8" }}>
+                        <p style={{ fontFamily: "'DM Mono',monospace", fontSize: "10px", color: "#94a3b8" }}>
                           {counter.current_servicer}
                         </p>
                       </div>
                     ) : counter.is_active ? (
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ background:"#94a3b8" }}/>
-                        <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:"11px",
-                          fontWeight:600,color:"#94a3b8" }}>Idle</span>
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#94a3b8" }} />
+                        <span style={{
+                          fontFamily: "'DM Sans',sans-serif", fontSize: "11px",
+                          fontWeight: 600, color: "#94a3b8"
+                        }}>Idle</span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ background:"#ef4444" }}/>
-                        <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:"11px",
-                          fontWeight:600,color:"#ef4444" }}>Inactive</span>
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#ef4444" }} />
+                        <span style={{
+                          fontFamily: "'DM Sans',sans-serif", fontSize: "11px",
+                          fontWeight: 600, color: "#ef4444"
+                        }}>Inactive</span>
                       </div>
                     )}
                   </td>
-                  <td style={{ padding:"14px 16px" }}>
-                    <span style={{ fontFamily:"'DM Mono',monospace",fontSize:"13px",color:"#3b82f6" }}>
+                  <td style={{ padding: "14px 16px" }}>
+                    <span style={{ fontFamily: "'DM Mono',monospace", fontSize: "13px", color: "#3b82f6" }}>
                       {counter.feedback_count.toLocaleString()}
                     </span>
                   </td>
-                  <td style={{ padding:"14px 16px" }}>
+                  <td style={{ padding: "14px 16px" }}>
                     <div className="flex items-center gap-2">
                       {counter.is_occupied && (
                         <button onClick={() => handleForceEnd(counter)}
-                          style={{ padding:"6px 10px",borderRadius:8,
-                            border:"1px solid #fef9c3",background:"#fefce8",
-                            fontFamily:"'DM Sans',sans-serif",fontSize:"11px",
-                            color:"#854d0e",cursor:"pointer",fontWeight:600 }}>
+                          style={{
+                            padding: "6px 10px", borderRadius: 8,
+                            border: "1px solid #fef9c3", background: "#fefce8",
+                            fontFamily: "'DM Sans',sans-serif", fontSize: "11px",
+                            color: "#854d0e", cursor: "pointer", fontWeight: 600
+                          }}>
                           End Session
                         </button>
                       )}
+                      <button onClick={() => handleToggleActive(counter)}
+                        style={{
+                          padding: "6px 10px", borderRadius: 8,
+                          border: "1px solid #e2e8f0", background: "transparent",
+                          fontFamily: "'DM Sans',sans-serif", fontSize: "11px",
+                          color: counter.is_active ? "#16a34a" : "#ef4444", cursor: "pointer"
+                        }}>
+                        {counter.is_active ? "Deactivate" : "Activate"}
+                      </button>
                       <button onClick={() => setDrawer(counter)}
-                        style={{ padding:"6px 12px",borderRadius:8,
-                          border:"1px solid #e2e8f0",background:"transparent",
-                          fontFamily:"'DM Sans',sans-serif",fontSize:"12px",
-                          color:"#374151",cursor:"pointer" }}>
+                        style={{
+                          padding: "6px 12px", borderRadius: 8,
+                          border: "1px solid #e2e8f0", background: "transparent",
+                          fontFamily: "'DM Sans',sans-serif", fontSize: "12px",
+                          color: "#374151", cursor: "pointer"
+                        }}>
                         Edit
                       </button>
                       <button onClick={() => setDeleteTarget(counter)}
-                        style={{ padding:"6px 10px",borderRadius:8,
-                          border:"1px solid #fecaca",background:"#fff1f0",
-                          fontSize:"12px",color:"#ef4444",cursor:"pointer" }}>
+                        style={{
+                          padding: "6px 10px", borderRadius: 8,
+                          border: "1px solid #fecaca", background: "#fff1f0",
+                          fontSize: "12px", color: "#ef4444", cursor: "pointer"
+                        }}>
                         🗑
                       </button>
                     </div>
@@ -441,8 +537,8 @@ export default function AdminCounters() {
             </AnimatePresence>
           </tbody>
         </table>
-        <div className="px-6 py-3" style={{ borderTop:"1px solid #f1f5f9",background:"#fafbfc" }}>
-          <span style={{ fontFamily:"'DM Mono',monospace",fontSize:"11px",color:"#94a3b8" }}>
+        <div className="px-6 py-3" style={{ borderTop: "1px solid #f1f5f9", background: "#fafbfc" }}>
+          <span style={{ fontFamily: "'DM Mono',monospace", fontSize: "11px", color: "#94a3b8" }}>
             Showing {filtered.length} of {counters.length} counters
           </span>
         </div>
@@ -450,43 +546,53 @@ export default function AdminCounters() {
 
       <AnimatePresence>
         {drawer !== null && (
-          <CounterDrawer counter={drawer} branches={MOCK_BRANCHES}
-            onClose={() => setDrawer(null)} onSave={handleSave} />
+          <CounterDrawer counter={drawer} branches={branches}
+            onClose={() => setDrawer(null)} />
         )}
       </AnimatePresence>
 
       <AnimatePresence>
         {deleteTarget && (
           <>
-            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setDeleteTarget(null)} className="fixed inset-0 z-30"
-              style={{ background:"rgba(15,23,42,0.5)",backdropFilter:"blur(2px)" }}/>
-            <motion.div initial={{ opacity:0,scale:0.92 }} animate={{ opacity:1,scale:1 }}
-              exit={{ opacity:0,scale:0.92 }}
-              transition={{ type:"spring",stiffness:320,damping:28 }}
+              style={{ background: "rgba(15,23,42,0.5)", backdropFilter: "blur(2px)" }} />
+            <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.92 }}
+              transition={{ type: "spring", stiffness: 320, damping: 28 }}
               className="fixed z-40 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-              style={{ width:380,background:"#ffffff",borderRadius:20,padding:"28px",
-                boxShadow:"0 20px 60px rgba(15,23,42,0.2)" }}>
+              style={{
+                width: 380, background: "#ffffff", borderRadius: 20, padding: "28px",
+                boxShadow: "0 20px 60px rgba(15,23,42,0.2)"
+              }}>
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl mb-4"
-                style={{ background:"#fff1f0" }}>🗑️</div>
-              <h3 style={{ fontFamily:"'Syne',sans-serif",fontSize:"16px",
-                fontWeight:800,color:"#0f172a",marginBottom:"8px" }}>
+                style={{ background: "#fff1f0" }}>🗑️</div>
+              <h3 style={{
+                fontFamily: "'Syne',sans-serif", fontSize: "16px",
+                fontWeight: 800, color: "#0f172a", marginBottom: "8px"
+              }}>
                 Delete "{deleteTarget.name}"?
               </h3>
-              <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:"13px",
-                color:"#64748b",lineHeight:1.6,marginBottom:"20px" }}>
+              <p style={{
+                fontFamily: "'DM Sans',sans-serif", fontSize: "13px",
+                color: "#64748b", lineHeight: 1.6, marginBottom: "20px"
+              }}>
                 The counter device will lose access. Historical feedback data is preserved.
               </p>
               <div className="flex gap-3">
                 <button onClick={() => setDeleteTarget(null)}
-                  style={{ flex:1,padding:"10px",borderRadius:10,
-                    border:"1.5px solid #e2e8f0",background:"transparent",
-                    fontFamily:"'DM Sans',sans-serif",fontSize:"13px",
-                    fontWeight:600,color:"#64748b",cursor:"pointer" }}>Cancel</button>
+                  style={{
+                    flex: 1, padding: "10px", borderRadius: 10,
+                    border: "1.5px solid #e2e8f0", background: "transparent",
+                    fontFamily: "'DM Sans',sans-serif", fontSize: "13px",
+                    fontWeight: 600, color: "#64748b", cursor: "pointer"
+                  }}>Cancel</button>
                 <button onClick={handleDelete}
-                  style={{ flex:1,padding:"10px",borderRadius:10,border:"none",
-                    background:"#ef4444",fontFamily:"'DM Sans',sans-serif",
-                    fontSize:"13px",fontWeight:700,color:"#ffffff",cursor:"pointer" }}>
+                  style={{
+                    flex: 1, padding: "10px", borderRadius: 10, border: "none",
+                    background: "#ef4444", fontFamily: "'DM Sans',sans-serif",
+                    fontSize: "13px", fontWeight: 700, color: "#ffffff", cursor: "pointer"
+                  }}>
                   Delete Counter
                 </button>
               </div>
