@@ -17,10 +17,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  *   branch_id = NULL → Global tag (shown at ALL branches)
  *   branch_id = set  → Branch-specific tag (shown only at that branch)
  *
- * Sentiment values used for the sentiment analysis feature:
- *   positive → contributes positively to sentiment score
- *   negative → contributes negatively to sentiment score
- *   neutral  → no sentiment impact
+ * Sentiment levels (5-point scale for sentiment analysis):
+ *   very_positive  → level 5 (score: +2)
+ *   positive       → level 4 (score: +1)
+ *   neutral        → level 3 (score: 0)
+ *   negative       → level 2 (score: -1)
+ *   very_negative  → level 1 (score: -2)
  *
  * @property int         $id
  * @property int|null    $branch_id
@@ -28,7 +30,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string|null $name_kh       Khmer label (multi-language)
  * @property string      $color         hex color for chip UI
  * @property string|null $icon          lucide-react icon name
- * @property string      $sentiment     positive|negative|neutral
+ * @property string      $sentiment     very_positive|positive|neutral|negative|very_negative
  * @property int         $sort_order
  * @property bool        $is_active
  * @property Carbon      $created_at

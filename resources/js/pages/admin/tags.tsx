@@ -11,17 +11,18 @@
  *   - Tag grid with live color/icon preview
  *   - Slide-in drawer with live preview chip
  *   - Color palette picker (preset + custom hex)
- *   - Sentiment selector (positive / neutral / negative)
+ *   - 5-Level Sentiment selector (Very Positive → Positive → Neutral → Negative → Very Negative)
  *   - Branch scope selector (global vs branch-specific)
  *   - Khmer name field (multi-language)
  *   - Sort order drag hint
  *   - Active / Inactive toggle
  *
- * 🔧 STATIC MODE: All data hardcoded. Search "TODO: REPLACE" for swap points.
+ * ✅ DYNAMIC MODE: Fully integrated with Laravel backend via Inertia.js
  */
 
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { router } from "@inertiajs/react";
 import toast, { Toaster } from "react-hot-toast";
 import AdminLayout from "../Layouts/AdminLayout";
 
@@ -35,10 +36,19 @@ interface Tag {
   name_kh: string | null;
   color: string;
   icon: string | null;
-  sentiment: "positive" | "negative" | "neutral";
+  sentiment: "very_positive" | "positive" | "neutral" | "negative" | "very_negative";
   sort_order: number;
   is_active: boolean;
   usage_count: number;
+}
+
+interface Branch { id: number; name: string; }
+
+// ─── Props from Inertia ───────────────────────────────────────────────────────
+
+interface Props {
+  tags: Tag[];
+  branches: Branch[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -50,32 +60,12 @@ const PRESET_COLORS = [
 ];
 
 const SENTIMENT_CONFIG = {
-  positive: { label: "Positive", color: "#22c55e", bg: "#f0fdf4", icon: "👍" },
-  neutral:  { label: "Neutral",  color: "#94a3b8", bg: "#f8fafc", icon: "😐" },
-  negative: { label: "Negative", color: "#ef4444", bg: "#fff1f0", icon: "👎" },
+  very_positive: { label: "Very Positive", color: "#22c55e", bg: "#f0fdf4", icon: "😊", level: 5 },
+  positive:      { label: "Positive",      color: "#84cc16", bg: "#fafce8", icon: "👍", level: 4 },
+  neutral:       { label: "Neutral",       color: "#94a3b8", bg: "#f8fafc", icon: "😐", level: 3 },
+  negative:      { label: "Negative",      color: "#f97316", bg: "#fff7ed", icon: "👎", level: 2 },
+  very_negative: { label: "Very Negative", color: "#ef4444", bg: "#fef2f2", icon: "😭", level: 1 },
 };
-
-const MOCK_BRANCHES = [
-  { id: 1, name: "Main Branch"  },
-  { id: 2, name: "North Branch" },
-  { id: 3, name: "East Branch"  },
-];
-
-// ─── 🔧 Mock Data ─────────────────────────────────────────────────────────────
-
-const INITIAL: Tag[] = [
-  { id:1,  branch_id:null, branch_name:null,          name:"Friendly Staff",      name_kh:"បុគ្គលិកស្នាក់",   color:"#22c55e", icon:"😊", sentiment:"positive", sort_order:1,  is_active:true,  usage_count:892  },
-  { id:2,  branch_id:null, branch_name:null,          name:"Helpful",             name_kh:"មានប្រយោជន៍",     color:"#22c55e", icon:"🤝", sentiment:"positive", sort_order:2,  is_active:true,  usage_count:731  },
-  { id:3,  branch_id:null, branch_name:null,          name:"Fast Service",        name_kh:"សេវារហ័ស",       color:"#3b82f6", icon:"⚡", sentiment:"positive", sort_order:3,  is_active:true,  usage_count:654  },
-  { id:4,  branch_id:null, branch_name:null,          name:"Clean Environment",   name_kh:"បរិស្ថានស្អាត",  color:"#06b6d4", icon:"✨", sentiment:"positive", sort_order:4,  is_active:true,  usage_count:420  },
-  { id:5,  branch_id:null, branch_name:null,          name:"Professional",        name_kh:"វិជ្ជាជីវៈ",     color:"#8b5cf6", icon:"🎯", sentiment:"positive", sort_order:5,  is_active:true,  usage_count:380  },
-  { id:6,  branch_id:null, branch_name:null,          name:"Slow Service",        name_kh:"សេវាយឺត",        color:"#f97316", icon:"🐢", sentiment:"negative", sort_order:6,  is_active:true,  usage_count:210  },
-  { id:7,  branch_id:null, branch_name:null,          name:"Long Wait",           name_kh:"រង់ចាំយូរ",      color:"#f97316", icon:"⏰", sentiment:"negative", sort_order:7,  is_active:true,  usage_count:188  },
-  { id:8,  branch_id:null, branch_name:null,          name:"Rude Staff",          name_kh:"បុគ្គលិករាខ្វាន់", color:"#ef4444", icon:"😤", sentiment:"negative", sort_order:8,  is_active:true,  usage_count:44   },
-  { id:9,  branch_id:null, branch_name:null,          name:"Need Improvement",    name_kh:"ត្រូវការកែលម្អ", color:"#64748b", icon:"📈", sentiment:"neutral",  sort_order:9,  is_active:true,  usage_count:120  },
-  { id:10, branch_id:1,    branch_name:"Main Branch", name:"VIP Service",         name_kh:"សេវាVIP",         color:"#f59e0b", icon:"⭐", sentiment:"positive", sort_order:10, is_active:true,  usage_count:55   },
-  { id:11, branch_id:1,    branch_name:"Main Branch", name:"Parking Issue",       name_kh:"បញ្ហាចតរថយន្ត",  color:"#ef4444", icon:"🚗", sentiment:"negative", sort_order:11, is_active:false, usage_count:12   },
-];
 
 // ─── Tag Chip Preview ─────────────────────────────────────────────────────────
 
@@ -95,21 +85,22 @@ function TagChipPreview({ name, color, icon, size = "md" }: {
 
 // ─── Drawer ───────────────────────────────────────────────────────────────────
 
-function TagDrawer({ tag, onClose, onSave }: {
+function TagDrawer({ tag, branches, onClose, onSave }: {
   tag: Partial<Tag> | null;
+  branches: Branch[];
   onClose: () => void;
   onSave: (data: Partial<Tag>) => void;
 }) {
   const isEdit = !!tag?.id;
   const [form, setForm] = useState({
-    name:       tag?.name       ?? "",
-    name_kh:    tag?.name_kh    ?? "",
-    color:      tag?.color      ?? "#22c55e",
-    icon:       tag?.icon       ?? "",
-    sentiment:  tag?.sentiment  ?? "positive" as "positive"|"negative"|"neutral",
-    branch_id:  tag?.branch_id  ?? null as number | null,
-    sort_order: tag?.sort_order ?? 0,
-    is_active:  tag?.is_active  ?? true,
+    name:         tag?.name        ?? "",
+    name_kh:      tag?.name_kh     ?? "",
+    color:        tag?.color       ?? "#22c55e",
+    icon:         tag?.icon        ?? "",
+    sentiment:    tag?.sentiment   ?? "positive" as "very_positive"|"positive"|"neutral"|"negative"|"very_negative",
+    branch_id:    tag?.branch_id   ?? null as number | null,
+    sort_order:   tag?.sort_order  ?? 0,
+    is_active:    tag?.is_active   ?? true,
   });
   const [customColor, setCustomColor] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -117,15 +108,38 @@ function TagDrawer({ tag, onClose, onSave }: {
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error("Tag name is required"); return; }
     setSaving(true);
-    // TODO: REPLACE with:
-    // isEdit
-    //   ? router.put(route('admin.tags.update', tag.id), form, { onSuccess: onClose })
-    //   : router.post(route('admin.tags.store'), form, { onSuccess: onClose });
-    await new Promise(r => setTimeout(r, 600));
-    const branch = MOCK_BRANCHES.find(b => b.id === form.branch_id);
-    onSave({ ...tag, ...form, branch_name: branch?.name ?? null });
-    setSaving(false);
-    onClose();
+    try {
+      if (isEdit && tag?.id) {
+        router.put(route('admin.tags.update', tag.id), form, {
+          onSuccess: () => {
+            toast.success("Tag updated!");
+            onClose();
+            window.location.reload();
+          },
+          onError: (errors) => {
+            toast.error("Failed to update tag");
+            console.error(errors);
+          }
+        });
+      } else {
+        router.post(route('admin.tags.store'), form, {
+          onSuccess: () => {
+            toast.success("Tag created!");
+            onClose();
+            window.location.reload();
+          },
+          onError: (errors) => {
+            toast.error("Failed to create tag");
+            console.error(errors);
+          }
+        });
+      }
+    } catch (error) {
+      toast.error("An error occurred");
+      console.error(error);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -171,8 +185,19 @@ function TagDrawer({ tag, onClose, onSave }: {
             </p>
             <TagChipPreview name={form.name} color={form.color}
               icon={form.icon || null} size="lg" />
+            <div style={{ display:"flex", gap:"4px", alignItems:"center", marginTop:"8px" }}>
+              {[1, 2, 3, 4, 5].map((level) => (
+                <span key={level} style={{
+                  fontSize:"20px",
+                  opacity: form.sentiment === Object.keys(SENTIMENT_CONFIG).find(k => SENTIMENT_CONFIG[k as keyof typeof SENTIMENT_CONFIG].level === level) ? 1 : 0.3,
+                  transition: "opacity 0.2s"
+                }}>
+                  {'⭐'}
+                </span>
+              ))}
+            </div>
             <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:"11px", color:"#94a3b8" }}>
-              This is how customers will see this tag
+              Sentiment: {SENTIMENT_CONFIG[form.sentiment as keyof typeof SENTIMENT_CONFIG]?.label} (Level {SENTIMENT_CONFIG[form.sentiment as keyof typeof SENTIMENT_CONFIG]?.level})
             </p>
           </div>
 
@@ -212,32 +237,35 @@ function TagDrawer({ tag, onClose, onSave }: {
             />
           </div>
 
-          {/* Emoji icon */}
+          {/* 5-Level Emoji Rating */}
           <div>
             <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:"12px",
-              fontWeight:600, color:"#374151", display:"block", marginBottom:"7px" }}>
-              Icon Emoji <span style={{ color:"#94a3b8", fontWeight:400 }}>— optional</span>
+              fontWeight:600, color:"#374151", display:"block", marginBottom:"10px" }}>
+              Sentiment (affects sentiment analysis score)
             </label>
-            <div className="flex gap-2">
-              <input value={form.icon}
-                onChange={e => setForm(p => ({ ...p, icon: e.target.value }))}
-                placeholder="Paste an emoji e.g. 😊"
-                maxLength={4}
-                style={{ flex:1, padding:"11px 14px", borderRadius:12,
-                  border:"1.5px solid #e2e8f0", background:"#fafbfc",
-                  fontFamily:"'DM Sans',sans-serif", fontSize:"20px",
-                  color:"#0f172a", outline:"none" }}
-              />
-              {/* Quick emoji picks */}
-              {["😊","⚡","🤝","✨","🎯","⏰","🐢","😤","📈","⭐"].map(e => (
-                <button key={e} onClick={() => setForm(p => ({ ...p, icon: e }))}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all flex-shrink-0"
-                  style={{ background: form.icon === e ? `${form.color}20` : "#f8fafc",
-                    border: `1.5px solid ${form.icon === e ? form.color : "#f1f5f9"}`,
-                    cursor:"pointer" }}>
-                  {e}
-                </button>
-              )).slice(0, 5)}
+            <div className="grid grid-cols-5 gap-2">
+              {(Object.entries(SENTIMENT_CONFIG) as [string, typeof SENTIMENT_CONFIG[keyof typeof SENTIMENT_CONFIG]][])
+                .map(([key, cfg]) => (
+                  <button key={key}
+                    onClick={() => setForm(p => ({ ...p, sentiment: key as any }))}
+                    className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all"
+                    style={{ border:`1.5px solid ${form.sentiment === key ? cfg.color : "#e2e8f0"}`,
+                      background: form.sentiment === key ? cfg.bg : "transparent",
+                      cursor:"pointer" }}>
+                    <span style={{ fontSize:22 }}>{cfg.icon}</span>
+                    <span style={{ fontFamily:"'DM Mono',monospace", fontSize:"10px",
+                      fontWeight: form.sentiment === key ? 600 : 400,
+                      color: form.sentiment === key ? cfg.color : "#94a3b8" }}>
+                      Lvl {cfg.level}
+                    </span>
+                    <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:"11px",
+                      fontWeight: form.sentiment === key ? 600 : 400,
+                      color: form.sentiment === key ? cfg.color : "#94a3b8",
+                      textAlign:"center", lineHeight:1 }}>
+                      {cfg.label}
+                    </span>
+                  </button>
+              ))}
             </div>
           </div>
 
@@ -329,7 +357,7 @@ function TagDrawer({ tag, onClose, onSave }: {
                   fontWeight: !form.branch_id ? 600 : 400, cursor:"pointer" }}>
                 🌐 Global (all branches)
               </button>
-              <button onClick={() => setForm(p => ({ ...p, branch_id: p.branch_id ?? MOCK_BRANCHES[0].id }))}
+              <button onClick={() => setForm(p => ({ ...p, branch_id: p.branch_id ?? branches[0]?.id ?? null }))}
                 className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all"
                 style={{ border:`1.5px solid ${form.branch_id ? "#0f172a" : "#e2e8f0"}`,
                   background: form.branch_id ? "#0f172a" : "transparent",
@@ -349,7 +377,7 @@ function TagDrawer({ tag, onClose, onSave }: {
                     border:"1.5px solid #e2e8f0", background:"#fafbfc",
                     fontFamily:"'DM Sans',sans-serif", fontSize:"13px",
                     color:"#0f172a", outline:"none", cursor:"pointer" }}>
-                  {MOCK_BRANCHES.map(b => (
+                  {branches.map(b => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
                 </motion.select>
@@ -419,8 +447,8 @@ function TagDrawer({ tag, onClose, onSave }: {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function AdminTags() {
-  const [tags,         setTags]         = useState<Tag[]>(INITIAL);
+export default function AdminTags({ tags: initialTags, branches }: Props) {
+  const [tags,         setTags]         = useState<Tag[]>(initialTags);
   const [search,       setSearch]       = useState("");
   const [filterSent,   setFilterSent]   = useState<string>("all");
   const [filterScope,  setFilterScope]  = useState<"all"|"global"|"branch">("all");
@@ -437,27 +465,34 @@ export default function AdminTags() {
     [tags, search, filterSent, filterScope]);
 
   const handleSave = (data: Partial<Tag>) => {
-    if (data.id) {
-      setTags(p => p.map(t => t.id === data.id ? { ...t, ...data } : t));
-      toast.success("Tag updated!");
-    } else {
-      setTags(p => [...p, { ...data, id: Date.now(), usage_count: 0 } as Tag]);
-      toast.success("Tag created!");
-    }
+    // Data is handled by router in the drawer component
+    setDrawer(null);
   };
 
   const handleDelete = () => {
     if (!deleteTarget) return;
-    // TODO: REPLACE with: router.delete(route('admin.tags.destroy', deleteTarget.id))
-    setTags(p => p.filter(t => t.id !== deleteTarget.id));
-    toast.success(`"${deleteTarget.name}" deleted`);
+    router.delete(route('admin.tags.destroy', deleteTarget.id), {
+      onSuccess: () => {
+        window.location.reload();
+        toast.success(`"${deleteTarget.name}" deleted`);
+      },
+      onError: () => {
+        toast.error("Failed to delete tag");
+      }
+    });
     setDeleteTarget(null);
   };
 
   const handleToggle = (tag: Tag) => {
-    // TODO: REPLACE with: router.patch(route('admin.tags.toggle', tag.id))
-    setTags(p => p.map(t => t.id === tag.id ? { ...t, is_active: !t.is_active } : t));
-    toast.success(`"${tag.name}" ${!tag.is_active ? "activated" : "deactivated"}`);
+    router.patch(route('admin.tags.toggle', tag.id), {}, {
+      onSuccess: () => {
+        window.location.reload();
+        toast.success(`"${tag.name}" ${!tag.is_active ? "activated" : "deactivated"}`);
+      },
+      onError: () => {
+        toast.error("Failed to update tag status");
+      }
+    });
   };
 
   return (
@@ -484,20 +519,21 @@ export default function AdminTags() {
           </div>
 
           {/* Sentiment filter */}
-          <div className="flex gap-1 p-1 rounded-xl"
+          <div className="flex gap-1 p-1 rounded-xl overflow-x-auto"
             style={{ background:"#ffffff", border:"1px solid #e2e8f0" }}>
-            {["all","positive","neutral","negative"].map(s => {
+            {["all","very_positive","positive","neutral","negative","very_negative"].map(s => {
               const cfg = s !== "all" ? SENTIMENT_CONFIG[s as keyof typeof SENTIMENT_CONFIG] : null;
               return (
                 <button key={s} onClick={() => setFilterSent(s)}
-                  style={{ padding:"5px 12px", borderRadius:9, border:"none",
+                  style={{ padding:"5px 10px", borderRadius:9, border:"none",
                     background: filterSent === s ? "#0f172a" : "transparent",
                     color: filterSent === s ? "#fff" : "#64748b",
-                    fontFamily:"'DM Sans',sans-serif", fontSize:"12px",
+                    fontFamily:"'DM Sans',sans-serif", fontSize:"11px",
                     fontWeight:500, cursor:"pointer", textTransform:"capitalize",
-                    display:"flex", alignItems:"center", gap:4 }}>
-                  {cfg && <span style={{ fontSize:12 }}>{cfg.icon}</span>}
-                  {s === "all" ? "All" : cfg?.label}
+                    display:"flex", alignItems:"center", gap:3, whiteSpace:"nowrap",
+                    flexShrink:0 }}>
+                  {cfg && <span style={{ fontSize:13 }}>{cfg.icon}</span>}
+                  {s === "all" ? "All" : `Lvl ${cfg?.level}`}
                 </button>
               );
             })}
@@ -540,12 +576,14 @@ export default function AdminTags() {
 
       {/* Stats bar */}
       <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }}
-        className="grid grid-cols-4 gap-4 mb-6">
+        className="grid grid-cols-6 gap-3 mb-6">
         {[
-          { label:"Total Tags",    value:tags.length,                                color:"#0f172a" },
-          { label:"Active",        value:tags.filter(t=>t.is_active).length,        color:"#22c55e" },
-          { label:"Positive",      value:tags.filter(t=>t.sentiment==="positive").length, color:"#22c55e" },
-          { label:"Negative",      value:tags.filter(t=>t.sentiment==="negative").length, color:"#ef4444" },
+          { label:"Total Tags",    value:tags.length,                                           color:"#0f172a" },
+          { label:"Active",        value:tags.filter(t=>t.is_active).length,                   color:"#22c55e" },
+          { label:"Very Positive",  value:tags.filter(t=>t.sentiment==="very_positive").length, color:"#22c55e" },
+          { label:"Positive",      value:tags.filter(t=>t.sentiment==="positive").length,      color:"#84cc16" },
+          { label:"Neutral",       value:tags.filter(t=>t.sentiment==="neutral").length,       color:"#94a3b8" },
+          { label:"Negative+",     value:tags.filter(t=>["negative","very_negative"].includes(t.sentiment)).length, color:"#ef4444" },
         ].map((s,i) => (
           <div key={s.label} className="rounded-2xl px-5 py-4"
             style={{ background:"#ffffff", border:"1px solid #f1f5f9",
@@ -580,8 +618,11 @@ export default function AdminTags() {
 
                   {/* Top: chip preview + scope */}
                   <div className="flex items-start justify-between gap-2">
-                    <TagChipPreview name={tag.name} color={tag.color}
-                      icon={tag.icon} size="sm" />
+                    <div className="flex gap-1">
+                      {tag.emoji_levels?.map((emoji, idx) => (
+                        <span key={idx} style={{ fontSize:"14px" }}>{emoji}</span>
+                      ))}
+                    </div>
                     {!tag.branch_id
                       ? <span style={{ fontFamily:"'DM Mono',monospace", fontSize:"9px",
                           color:"#94a3b8", letterSpacing:"0.06em", flexShrink:0 }}>GLOBAL</span>
@@ -672,8 +713,11 @@ export default function AdminTags() {
                         color:"#94a3b8" }}>{tag.sort_order}</span>
                     </td>
                     <td style={{ padding:"12px 14px" }}>
-                      <TagChipPreview name={tag.name} color={tag.color}
-                        icon={tag.icon} size="sm" />
+                      <div className="flex gap-1">
+                        {tag.emoji_levels?.map((emoji, idx) => (
+                          <span key={idx} style={{ fontSize:"14px" }}>{emoji}</span>
+                        ))}
+                      </div>
                     </td>
                     <td style={{ padding:"12px 14px" }}>
                       <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:"12px",
@@ -735,7 +779,7 @@ export default function AdminTags() {
       {/* Drawer */}
       <AnimatePresence>
         {drawer !== null && (
-          <TagDrawer tag={drawer} onClose={() => setDrawer(null)} onSave={handleSave} />
+          <TagDrawer tag={drawer} branches={branches} onClose={() => setDrawer(null)} onSave={handleSave} />
         )}
       </AnimatePresence>
 
@@ -753,8 +797,19 @@ export default function AdminTags() {
               style={{ width:360, background:"#ffffff", borderRadius:20,
                 padding:"28px", boxShadow:"0 20px 60px rgba(15,23,42,0.2)" }}>
               <div className="flex items-center gap-3 mb-4">
-                <TagChipPreview name={deleteTarget.name} color={deleteTarget.color}
-                  icon={deleteTarget.icon} size="md" />
+                <div className="flex gap-2">
+                  {deleteTarget.emoji_levels?.map((emoji, idx) => (
+                    <span key={idx} style={{ fontSize:"24px" }}>{emoji}</span>
+                  ))}
+                </div>
+                <div>
+                  <h4 style={{ fontFamily:"'Syne',sans-serif", fontSize:"14px",
+                    fontWeight:700, color:"#0f172a" }}>{deleteTarget.name}</h4>
+                  {deleteTarget.name_kh && (
+                    <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:"11px",
+                      color:"#94a3b8" }}>{deleteTarget.name_kh}</p>
+                  )}
+                </div>
               </div>
               <h3 style={{ fontFamily:"'Syne',sans-serif", fontSize:"16px",
                 fontWeight:800, color:"#0f172a", marginBottom:"8px" }}>

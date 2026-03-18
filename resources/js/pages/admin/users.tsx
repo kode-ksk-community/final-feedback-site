@@ -51,6 +51,31 @@ interface Props {
   branches: Branch[];
 }
 
+// ─── Role Configuration ───────────────────────────────────────────────────────
+
+const ROLE_CONFIG: Record<Role, { label: string; color: string; bg: string }> = {
+  super_admin: {
+    label: "Super Admin",
+    color: "#dc2626",
+    bg: "#fee2e2",
+  },
+  admin: {
+    label: "Admin",
+    color: "#2563eb",
+    bg: "#dbeafe",
+  },
+  branch_manager: {
+    label: "Branch Manager",
+    color: "#9333ea",
+    bg: "#f3e8ff",
+  },
+  servicer: {
+    label: "Servicer",
+    color: "#16a34a",
+    bg: "#f0fdf4",
+  },
+};
+
 // ─── Drawer ───────────────────────────────────────────────────────────────────
 
 function UserDrawer({ user, branches, onClose, onSave }: {
