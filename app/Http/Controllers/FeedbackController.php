@@ -47,23 +47,23 @@ class FeedbackController extends Controller
     {
         // Get servicer from counter session
         $counter = $request->counter; // Set by DeviceTokenMiddleware
-        $session = $counter->activeSession;
-        
+        $session = $counter->activeSession()->with('servicer')->first();
+
         if (!$session) {
             return response()->json(['error' => 'No active session'], 404);
         }
 
         $servicer = $session->servicer;
-        
+
         // Get tags for this branch (or global tags)
         $tags = Tag::where(function ($query) use ($counter) {
             $query->where('branch_id', $counter->branch_id)
-                  ->orWhereNull('branch_id');
+                ->orWhereNull('branch_id');
         })
-        ->where('is_active', true)
-        ->orderBy('sort_order', 'asc')
-        ->select('id', 'name', 'name_kh', 'color', 'emoji_levels', 'sentiment')
-        ->get();
+            ->where('is_active', true)
+            ->orderBy('sort_order', 'asc')
+            ->select('id', 'name', 'color', 'sentiment')
+            ->get();
 
         return response()->json([
             'servicer' => [
@@ -83,7 +83,7 @@ class FeedbackController extends Controller
     public function store(Request $request): JsonResponse
     {
         $counter = $request->counter; // Set by DeviceTokenMiddleware
-        $session = $counter->activeSession;
+        $session = $counter->activeSession()->with('servicer')->first();
 
         if (!$session) {
             return response()->json(['error' => 'No active session'], 404);
@@ -114,7 +114,7 @@ class FeedbackController extends Controller
             // Attach tags
             if (!empty($validated['tag_ids'])) {
                 $feedback->tags()->attach($validated['tag_ids']);
-                
+
                 // Set sentiment label based on tags
                 $feedback->sentiment_label = $this->determineSentimentLabel($feedback);
                 $feedback->save();
@@ -152,7 +152,7 @@ class FeedbackController extends Controller
 
         $totalFeedback = $query->count();
         $averageRating = $query->avg('rating') ?? 0;
-        
+
         $ratingDistribution = $query->selectRaw('rating, COUNT(*) as count')
             ->groupBy('rating')
             ->pluck('count', 'rating')
@@ -183,18 +183,18 @@ class FeedbackController extends Controller
         $topTags = Tag::whereHas('feedbacks', function ($query) use ($startDate, $endDate) {
             $query->whereBetween('feedbacks.created_at', [$startDate, $endDate]);
         })
-        ->withCount('feedbacks')
-        ->orderByDesc('feedbacks_count')
-        ->limit($limit)
-        ->get(['id', 'name', 'color'])
-        ->map(function ($tag) {
-            return [
-                'id' => $tag->id,
-                'name' => $tag->name,
-                'color' => $tag->color,
-                'count' => $tag->feedbacks_count,
-            ];
-        });
+            ->withCount('feedbacks')
+            ->orderByDesc('feedbacks_count')
+            ->limit($limit)
+            ->get(['id', 'name', 'color'])
+            ->map(function ($tag) {
+                return [
+                    'id' => $tag->id,
+                    'name' => $tag->name,
+                    'color' => $tag->color,
+                    'count' => $tag->feedbacks_count,
+                ];
+            });
 
         return response()->json(['tags' => $topTags]);
     }
