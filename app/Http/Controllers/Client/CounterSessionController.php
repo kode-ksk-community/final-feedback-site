@@ -47,29 +47,26 @@ class CounterSessionController extends Controller
      */
     public function status(Request $request)
     {
+        /** @var Counter $counter */
+        $counter = $request->attributes->get('counter');
 
-        Log::info($request->all());
-        
-        // /** @var Counter $counter */
-        // $counter = $request->attributes->get('counter');
+        $session = $counter->sessions()
+            ->whereNull('ended_at')
+            ->with('servicer:id,name')
+            ->latest('started_at')
+            ->first();
 
-        // $session = $counter->sessions()
-        //     ->whereNull('ended_at')
-        //     ->with('servicer:id,name')
-        //     ->latest('started_at')
-        //     ->first();
+        if (! $session) {
+            return response()->json(['active' => false]);
+        }
 
-        // if (! $session) {
-        //     return response()->json(['active' => false]);
-        // }
-
-        // return response()->json([
-        //     'active'  => true,
-        //     'session' => [
-        //         'id'           => $session->id,
-        //         'servicer_name' => $session->servicer->name,
-        //         'started_at'   => $session->started_at->toISOString(),
-        //     ],
-        // ]);
+        return response()->json([
+            'active'  => true,
+            'session' => [
+                'id'           => $session->id,
+                'servicer_name' => $session->servicer->name,
+                'started_at'   => $session->started_at->toISOString(),
+            ],
+        ]);
     }
 }

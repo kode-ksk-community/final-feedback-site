@@ -47,8 +47,8 @@ class DeviceTokenMiddleware
             return response()->json(['error' => 'Counter is not active'], 403);
         }
 
-        // Attach the counter to the request
-        $request->counter = $counter;
+        // Attach the counter to the request attributes
+        $request->attributes->set('counter', $counter);
 
         return $next($request);
     }

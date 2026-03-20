@@ -1,0 +1,906 @@
+/**
+ * Active.tsx — Counter Active Screen
+ *
+ * Combined idle + feedback screen shown on counter display.
+ * - When idle: Shows QR code for servicers to scan
+ * - When servicer logged in: Shows feedback form for customers
+ *
+ * This replaces the need to redirect between pages when sessions change.
+ * Seamless transition from idle to active feedback collection.
+ *
+ * URL: /counter/idle (same endpoint, enhanced functionality)
+ *
+ * Polling flow:
+ *   1. Mounts → checks localStorage for device_token
+ *   2. Every 4 seconds: polls /api/counter/session/status
+ *   3. No session → show QR code + waiting message
+ *   4. Session detected → show feedback form
+ *   5. Feedback submitted → brief thanks + auto-reset back to idle
+ */
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { router } from "@inertiajs/react";
+import { motion, AnimatePresence } from "framer-motion";
+import axios from "axios";
+import QRCode from "qrcode";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ActiveSession {
+    id: number;
+    servicer_name: string;
+    started_at: string;
+}
+
+interface Tag {
+    id: number;
+    name: string;
+    color: string;
+    sentiment: "positive" | "negative" | "neutral";
+}
+
+interface RatingLevel {
+    value: number;
+    emoji: string;
+    label: string;
+    labelKh: string;
+    bg: string;
+    accent: string;
+    text: string;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const POLL_INTERVAL_MS = 4_000;
+const WELCOME_DELAY_MS = 800;
+const THANK_YOU_DURATION = 4;
+
+const RATINGS: RatingLevel[] = [
+    { value: 1, emoji: "😡", label: "Very Bad", labelKh: "អន់ខ្លាំង", bg: "#fff1f0", accent: "#ef4444", text: "#7f1d1d" },
+    { value: 2, emoji: "😞", label: "Bad", labelKh: "អន់", bg: "#fff7ed", accent: "#f97316", text: "#7c2d12" },
+    { value: 3, emoji: "😐", label: "Neutral", labelKh: "មធ្យម", bg: "#fefce8", accent: "#eab308", text: "#713f12" },
+    { value: 4, emoji: "😊", label: "Good", labelKh: "ល្អ", bg: "#f0fdf4", accent: "#22c55e", text: "#14532d" },
+    { value: 5, emoji: "😍", label: "Excellent", labelKh: "ល្អណាស់", bg: "#eff6ff", accent: "#3b82f6", text: "#1e3a8a" },
+];
+
+const MOCK_TAGS: Tag[] = [
+    { id: 1, name: "Friendly Staff", color: "#22c55e", sentiment: "positive" },
+    { id: 2, name: "Helpful", color: "#22c55e", sentiment: "positive" },
+    { id: 3, name: "Fast Service", color: "#3b82f6", sentiment: "positive" },
+    { id: 4, name: "Clean Environment", color: "#06b6d4", sentiment: "positive" },
+    { id: 5, name: "Professional", color: "#8b5cf6", sentiment: "positive" },
+    { id: 6, name: "Slow Service", color: "#f97316", sentiment: "negative" },
+    { id: 7, name: "Long Wait", color: "#f97316", sentiment: "negative" },
+    { id: 8, name: "Rude Staff", color: "#ef4444", sentiment: "negative" },
+    { id: 9, name: "Need Improvement", color: "#6b7280", sentiment: "neutral" },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function readDeviceInfo() {
+    const deviceToken = localStorage.getItem("counter_device_token");
+    const counterName = localStorage.getItem("counter_name");
+    const branchName = localStorage.getItem("branch_name");
+    if (!deviceToken || !counterName || !branchName) return null;
+    return { deviceToken, counterName, branchName };
+}
+
+function clearDeviceState() {
+    ["counter_device_token", "counter_id", "counter_name", "branch_name"].forEach((k) =>
+        localStorage.removeItem(k)
+    );
+}
+
+function buildActivationUrl(deviceToken: string) {
+    return `${window.location.origin}/counter/activate?counter_token=${deviceToken}`;
+}
+
+function useClock() {
+    const [now, setNow] = useState(new Date());
+    useEffect(() => {
+        const t = setInterval(() => setNow(new Date()), 1000);
+        return () => clearInterval(t);
+    }, []);
+    return now;
+}
+
+// ─── QR Code Component ────────────────────────────────────────────────────────
+
+function CounterQrCode({ deviceToken }: { deviceToken: string }) {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [error, setError] = useState(false);
+
+    useEffect(() => {
+        if (!canvasRef.current || !deviceToken) return;
+        const url = buildActivationUrl(deviceToken);
+        QRCode.toCanvas(
+            canvasRef.current,
+            url,
+            {
+                width: 200,
+                margin: 2,
+                color: { dark: "#3d2c1e", light: "#faf5ee" },
+                errorCorrectionLevel: "M",
+            },
+            (err) => {
+                if (err) setError(true);
+            }
+        );
+    }, [deviceToken]);
+
+    if (error) {
+        return (
+            <div
+                className="flex flex-col items-center gap-2"
+                style={{
+                    width: 200,
+                    height: 200,
+                    background: "#f5e6d0",
+                    borderRadius: 16,
+                    border: "1px solid rgba(180,140,100,0.3)",
+                    justifyContent: "center",
+                }}
+            >
+                <span style={{ fontSize: 32 }}>⚠️</span>
+                <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: "#a07850" }}>
+                    QR generation failed. Refresh page.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            style={{
+                borderRadius: 20,
+                overflow: "hidden",
+                boxShadow: "0 8px 40px rgba(180,140,100,0.2), 0 0 0 1px rgba(180,140,100,0.2)",
+            }}
+        >
+            <canvas ref={canvasRef} style={{ display: "block" }} />
+        </motion.div>
+    );
+}
+
+// ─── Idle Screen Component ─────────────────────────────────────────────────────
+
+interface IdleScreenProps {
+    deviceInfo: {
+        deviceToken: string;
+        counterName: string;
+        branchName: string;
+    } | null;
+    now: Date;
+    lastChecked: Date;
+    connectionError: boolean;
+    onReset: () => void;
+    showResetConfirm: boolean;
+    onResetConfirmChange: (show: boolean) => void;
+}
+
+function IdleScreen({
+    deviceInfo,
+    now,
+    lastChecked,
+    connectionError,
+    onReset,
+    showResetConfirm,
+    onResetConfirmChange,
+}: IdleScreenProps) {
+    const timeStr = now.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+    });
+    const dateStr = now.toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+    });
+    const lastCheckedStr = lastChecked.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    });
+
+    return (
+        <>
+            <link
+                href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,600&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap"
+                rel="stylesheet"
+            />
+
+            <div className="min-h-screen w-full relative overflow-hidden flex flex-col" style={{ background: "#faf5ee" }}>
+                {/* Background effects */}
+                <div className="absolute inset-0 pointer-events-none" aria-hidden>
+                    <div
+                        className="absolute top-0 left-0 w-[600px] h-[600px] opacity-40"
+                        style={{ background: "radial-gradient(circle at 0% 0%, #f5dfc0, transparent 65%)" }}
+                    />
+                    <div
+                        className="absolute bottom-0 right-0 w-[500px] h-[500px] opacity-30"
+                        style={{ background: "radial-gradient(circle at 100% 100%, #ead5b5, transparent 65%)" }}
+                    />
+                    <div
+                        className="absolute inset-0 opacity-[0.06]"
+                        style={{
+                            backgroundImage: "radial-gradient(circle, #b48c64 1px, transparent 1px)",
+                            backgroundSize: "32px 32px",
+                        }}
+                    />
+                </div>
+
+                {/* Top bar */}
+                <motion.div
+                    initial={{ opacity: 0, y: -16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6 }}
+                    className="relative z-10 flex items-center justify-between px-10 pt-8"
+                >
+                    <div className="flex items-center gap-3">
+                        <motion.div
+                            animate={{ opacity: connectionError ? [1, 0.2, 1] : 1 }}
+                            transition={{ duration: 1.5, repeat: connectionError ? Infinity : 0 }}
+                            className="w-2 h-2 rounded-full"
+                            style={{ background: connectionError ? "#ef4444" : "#fbbf24" }}
+                        />
+                        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "12px", color: "#b48c64" }}>
+                            {deviceInfo?.branchName ?? "—"}
+                        </span>
+                        <span style={{ color: "#d4b896" }}>·</span>
+                        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "12px", color: "#b48c64" }}>
+                            {deviceInfo?.counterName ?? "—"}
+                        </span>
+                        <AnimatePresence>
+                            {connectionError && (
+                                <motion.span
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    style={{
+                                        background: "#fff1f0",
+                                        color: "#ef4444",
+                                        border: "1px solid #fecaca",
+                                        fontFamily: "'DM Mono', monospace",
+                                        fontSize: "10px",
+                                        padding: "2px 8px",
+                                        borderRadius: 100,
+                                    }}
+                                >
+                                    reconnecting...
+                                </motion.span>
+                            )}
+                        </AnimatePresence>
+                    </div>
+
+                    <div className="text-right">
+                        <p style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "26px", fontWeight: 600, color: "#3d2c1e" }}>
+                            {timeStr}
+                        </p>
+                        <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "11px", color: "#b48c64", marginTop: "2px" }}>
+                            {dateStr}
+                        </p>
+                    </div>
+                </motion.div>
+
+                {/* Main content */}
+                <div className="relative z-10 flex-1 flex items-center justify-center px-8">
+                    <div className="flex flex-col lg:flex-row items-center justify-center gap-16 w-full max-w-3xl">
+                        {/* Left: QR code */}
+                        <motion.div
+                            initial={{ opacity: 0, x: -24 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.7, delay: 0.2 }}
+                            className="flex flex-col items-center gap-4"
+                        >
+                            {deviceInfo ? <CounterQrCode deviceToken={deviceInfo.deviceToken} /> : <div style={{ width: 200, height: 200, borderRadius: 20, background: "rgba(180,140,100,0.08)", border: "1px solid rgba(180,140,100,0.2)" }} />}
+                            <div className="text-center">
+                                <p style={{ fontFamily: "'DM Mono', monospace", fontSize: "11px", color: "#b48c64" }}>
+                                    Scan to activate
+                                </p>
+                            </div>
+                        </motion.div>
+
+                        {/* Divider */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 0.4 }}
+                            className="hidden lg:flex flex-col items-center gap-3"
+                        >
+                            <div style={{ width: 1, height: 60, background: "rgba(180,140,100,0.2)" }} />
+                            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px", color: "#d4b896" }}>OR</span>
+                            <div style={{ width: 1, height: 60, background: "rgba(180,140,100,0.2)" }} />
+                        </motion.div>
+
+                        {/* Right: text */}
+                        <motion.div
+                            initial={{ opacity: 0, x: 24 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.7, delay: 0.3 }}
+                            className="flex flex-col items-center lg:items-start gap-6 text-center lg:text-left max-w-xs"
+                        >
+                            <div>
+                                <h1
+                                    style={{
+                                        fontFamily: "'Cormorant Garamond', serif",
+                                        fontSize: "38px",
+                                        fontWeight: 600,
+                                        color: "#3d2c1e",
+                                        marginBottom: "12px",
+                                    }}
+                                >
+                                    Waiting for<br />
+                                    <span style={{ fontStyle: "italic", color: "#b48c64" }}>Servicer</span>
+                                </h1>
+                            </div>
+
+                            {/* Step hints */}
+                            <div className="flex flex-col gap-2.5">
+                                {[
+                                    { step: "1", text: "Open your phone camera" },
+                                    { step: "2", text: "Scan the QR code" },
+                                    { step: "3", text: "Enter your credentials" },
+                                ].map(({ step, text }) => (
+                                    <div key={step} className="flex items-center gap-3">
+                                        <div
+                                            className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                                            style={{
+                                                background: "rgba(180,140,100,0.15)",
+                                                border: "1px solid rgba(180,140,100,0.3)",
+                                            }}
+                                        >
+                                            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px", color: "#b48c64", fontWeight: 700 }}>
+                                                {step}
+                                            </span>
+                                        </div>
+                                        <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: "#a07850" }}>
+                                            {text}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Polling status */}
+                            <div
+                                className="flex items-center gap-2.5 px-4 py-2 rounded-full"
+                                style={{
+                                    background: "rgba(180,140,100,0.08)",
+                                    border: "1px solid rgba(180,140,100,0.18)",
+                                }}
+                            >
+                                <motion.div
+                                    animate={{ opacity: [1, 0.3, 1] }}
+                                    transition={{ duration: 2, repeat: Infinity }}
+                                    className="w-1.5 h-1.5 rounded-full"
+                                    style={{ background: connectionError ? "#ef4444" : "#b48c64" }}
+                                />
+                                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px", color: "#b48c64" }}>
+                                    {connectionError ? "Retrying..." : `Last checked: ${lastCheckedStr}`}
+                                </span>
+                            </div>
+                        </motion.div>
+                    </div>
+                </div>
+
+                {/* Bottom bar */}
+                <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: 0.5 }}
+                    className="relative z-10 flex items-center justify-between px-10 pb-8"
+                >
+                    <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "16px", color: "#c4a882", fontStyle: "italic" }}>
+                        FeedbackPro
+                    </span>
+
+                    <AnimatePresence mode="wait">
+                        {!showResetConfirm ? (
+                            <motion.button
+                                key="btn"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => onResetConfirmChange(true)}
+                                style={{
+                                    fontFamily: "'DM Mono', monospace",
+                                    fontSize: "11px",
+                                    color: "#d4b896",
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                }}
+                            >
+                                Reset device
+                            </motion.button>
+                        ) : (
+                            <motion.div
+                                key="confirm"
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="flex items-center gap-3"
+                            >
+                                <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: "#a07850" }}>
+                                    Sure?
+                                </span>
+                                <button
+                                    onClick={onReset}
+                                    style={{
+                                        fontFamily: "'DM Sans', sans-serif",
+                                        fontSize: "12px",
+                                        color: "#ef4444",
+                                        background: "none",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Yes
+                                </button>
+                                <button
+                                    onClick={() => onResetConfirmChange(false)}
+                                    style={{
+                                        fontFamily: "'DM Sans', sans-serif",
+                                        fontSize: "12px",
+                                        color: "#a07850",
+                                        background: "none",
+                                        border: "none",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </motion.div>
+            </div>
+
+            <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
+        </>
+    );
+}
+
+// ─── Feedback Form Component ───────────────────────────────────────────────────
+
+interface FeedbackState {
+    selectedRating: RatingLevel | null;
+    selectedTagIds: number[];
+    comment: string;
+    step: "rate" | "detail" | "done";
+    submitting: boolean;
+}
+
+interface FeedbackScreenProps {
+    session: ActiveSession;
+    onComplete: () => void;
+}
+
+function FeedbackScreen({ session, onComplete }: FeedbackScreenProps) {
+    const [state, setState] = useState<FeedbackState>({
+        selectedRating: null,
+        selectedTagIds: [],
+        comment: "",
+        step: "rate",
+        submitting: false,
+    });
+
+    const [tags, setTags] = useState<Tag[]>(MOCK_TAGS);
+    const [loadingTags, setLoadingTags] = useState(true);
+
+    // Load real tags from backend on mount
+    useEffect(() => {
+        const fetchTags = async () => {
+            try {
+                const token = localStorage.getItem("counter_device_token");
+                const response = await axios.get<{ servicer: any; tags: Tag[] }>(
+                    "/api/counter/feedback-data",
+                    { headers: { "X-Counter-Token": token } }
+                );
+                if (response.data.tags) {
+                    setTags(response.data.tags);
+                }
+            } catch (err) {
+                console.error("Failed to load tags, using mock data:", err);
+                // Fall back to mock tags on error
+            } finally {
+                setLoadingTags(false);
+            }
+        };
+
+        fetchTags();
+    }, []);
+
+    const theme = state.selectedRating ?? RATINGS[3];
+
+    const handleRatingSelect = (rating: RatingLevel) => {
+        setState((s) => ({ ...s, selectedRating: rating }));
+        setTimeout(() => setState((s) => ({ ...s, step: "detail" })), 420);
+    };
+
+    const toggleTag = (id: number) => {
+        setState((s) => ({
+            ...s,
+            selectedTagIds: s.selectedTagIds.includes(id) ? s.selectedTagIds.filter((t) => t !== id) : [...s.selectedTagIds, id],
+        }));
+    };
+
+    const handleSubmit = async () => {
+        if (!state.selectedRating) return;
+        setState((s) => ({ ...s, submitting: true }));
+
+        try {
+            const token = localStorage.getItem("counter_device_token");
+            await axios.post(
+                "/api/counter/feedback",
+                {
+                    rating: state.selectedRating.value,
+                    tag_ids: state.selectedTagIds,
+                    comment: state.comment.trim() || null,
+                },
+                { headers: { "X-Counter-Token": token } }
+            );
+        } catch (err) {
+            console.error("Feedback submission error:", err);
+        }
+
+        setState((s) => ({ ...s, submitting: false, step: "done" }));
+
+        // Auto-reset after thank you
+        setTimeout(() => {
+            setState({
+                selectedRating: null,
+                selectedTagIds: [],
+                comment: "",
+                step: "rate",
+                submitting: false,
+            });
+            onComplete();
+        }, THANK_YOU_DURATION * 1000);
+    };
+
+    const handleBack = () => {
+        if (state.step === "detail") {
+            setState((s) => ({ ...s, step: "rate", selectedRating: null }));
+        }
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen w-full relative overflow-hidden flex flex-col"
+            style={{ backgroundColor: state.step === "done" ? theme.bg : "#ffffff" }}
+        >
+            <link
+                href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap"
+                rel="stylesheet"
+            />
+
+            {/* Top accent */}
+            <motion.div
+                className="absolute top-0 left-0 right-0 h-1"
+                animate={{ backgroundColor: theme.accent }}
+                transition={{ duration: 0.4 }}
+            />
+
+            {/* Header */}
+            {state.step !== "done" && (
+                <motion.div
+                    initial={{ opacity: 0, y: -16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="relative z-10 flex items-center justify-between px-8 pt-8 pb-4"
+                >
+                    <div>
+                        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: "11px", color: "#999", letterSpacing: "0.06em" }}>
+                            FEEDBACK FOR
+                        </p>
+                        <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "24px", fontWeight: 700, color: theme.text }}>
+                            {session.servicer_name}
+                        </p>
+                    </div>
+
+                    {state.step === "detail" && (
+                        <motion.button
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            onClick={handleBack}
+                            style={{
+                                fontFamily: "'DM Sans', sans-serif",
+                                fontSize: "14px",
+                                color: theme.text,
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                            }}
+                        >
+                            ← Back
+                        </motion.button>
+                    )}
+                </motion.div>
+            )}
+
+            {/* Main content */}
+            <div className="flex-1 flex items-center justify-center px-8 py-12">
+                <AnimatePresence mode="wait">
+                    {state.step === "rate" && (
+                        <motion.div
+                            key="rate"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -20 }}
+                            className="flex flex-col items-center gap-12 max-w-2xl"
+                        >
+                            <div className="text-center">
+                                <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "18px", color: "#666", marginBottom: "8px" }}>
+                                    How was your experience?
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-5 gap-6">
+                                {RATINGS.map((rating) => (
+                                    <motion.button
+                                        key={rating.value}
+                                        onClick={() => handleRatingSelect(rating)}
+                                        whileTap={{ scale: 0.88 }}
+                                        style={{ background: "none", border: "none", cursor: "pointer" }}
+                                    >
+                                        <motion.div
+                                            animate={
+                                                state.selectedRating?.value === rating.value
+                                                    ? { scale: 1.25, y: -8 }
+                                                    : { scale: 1, y: 0 }
+                                            }
+                                            style={{
+                                                width: 80,
+                                                height: 80,
+                                                borderRadius: "50%",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                fontSize: "38px",
+                                                background:
+                                                    state.selectedRating?.value === rating.value
+                                                        ? `radial-gradient(circle at 35% 35%, white, ${rating.bg})`
+                                                        : "radial-gradient(circle at 35% 35%, #ffffff, #f8f8f8)",
+                                                border:
+                                                    state.selectedRating?.value === rating.value
+                                                        ? `3px solid ${rating.accent}`
+                                                        : "3px solid rgba(0,0,0,0.06)",
+                                            }}
+                                        >
+                                            {rating.emoji}
+                                        </motion.div>
+                                        <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: "#666", marginTop: "6px" }}>
+                                            {rating.label}
+                                        </p>
+                                    </motion.button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {state.step === "detail" && (
+                        <motion.div
+                            key="detail"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -20 }}
+                            className="flex flex-col gap-8 max-w-2xl w-full"
+                        >
+                            <div>
+                                <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "14px", color: "#666", marginBottom: "12px" }}>
+                                    Select tags (optional):
+                                </p>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                    {loadingTags ? (
+                                        <p style={{ color: "#999", fontSize: "12px" }}>Loading tags...</p>
+                                    ) : (
+                                        tags.map((tag) => (
+                                            <motion.button
+                                                key={tag.id}
+                                                onClick={() => toggleTag(tag.id)}
+                                                whileTap={{ scale: 0.95 }}
+                                                animate={{
+                                                    background: state.selectedTagIds.includes(tag.id) ? tag.color + "20" : "transparent",
+                                                    borderColor: state.selectedTagIds.includes(tag.id) ? tag.color : "#ddd",
+                                                }}
+                                                style={{
+                                                    fontFamily: "'DM Sans', sans-serif",
+                                                    fontSize: "13px",
+                                                    color: state.selectedTagIds.includes(tag.id) ? tag.color : "#666",
+                                                    border: `2px solid`,
+                                                    borderRadius: "8px",
+                                                    padding: "8px 12px",
+                                                    cursor: "pointer",
+                                                }}
+                                            >
+                                                {tag.name}
+                                            </motion.button>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "14px", color: "#666", marginBottom: "8px" }}>
+                                    Additional comments (optional):
+                                </p>
+                                <textarea
+                                    value={state.comment}
+                                    onChange={(e) => setState((s) => ({ ...s, comment: e.target.value }))}
+                                    placeholder="Tell us more..."
+                                    style={{
+                                        width: "100%",
+                                        height: "120px",
+                                        fontFamily: "'DM Sans', sans-serif",
+                                        fontSize: "14px",
+                                        padding: "12px",
+                                        border: "2px solid #ddd",
+                                        borderRadius: "8px",
+                                        borderColor: theme.accent,
+                                        resize: "none",
+                                    }}
+                                />
+                            </div>
+
+                            <motion.button
+                                onClick={handleSubmit}
+                                disabled={state.submitting}
+                                whileTap={{ scale: 0.96 }}
+                                style={{
+                                    fontFamily: "'DM Sans', sans-serif",
+                                    fontSize: "16px",
+                                    fontWeight: 600,
+                                    color: "white",
+                                    background: theme.accent,
+                                    border: "none",
+                                    borderRadius: "8px",
+                                    padding: "14px 32px",
+                                    cursor: state.submitting ? "not-allowed" : "pointer",
+                                    opacity: state.submitting ? 0.6 : 1,
+                                }}
+                            >
+                                {state.submitting ? "Submitting..." : "Submit Feedback"}
+                            </motion.button>
+                        </motion.div>
+                    )}
+
+                    {state.step === "done" && (
+                        <motion.div
+                            key="done"
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="flex flex-col items-center gap-6 text-center"
+                        >
+                            <motion.div
+                                animate={{ scale: [1, 1.1, 1] }}
+                                transition={{ duration: 2, repeat: Infinity }}
+                                style={{
+                                    width: 80,
+                                    height: 80,
+                                    borderRadius: "50%",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "40px",
+                                    background: `radial-gradient(circle, ${theme.accent}20, ${theme.bg})`,
+                                    border: `3px solid ${theme.accent}`,
+                                }}
+                            >
+                                ✓
+                            </motion.div>
+                            <div>
+                                <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 700, color: theme.text }}>
+                                    Thank You!
+                                </p>
+                                <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "14px", color: "#666", marginTop: "8px" }}>
+                                    Your feedback has been recorded.
+                                </p>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+        </motion.div>
+    );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export default function CounterActive() {
+    const now = useClock();
+
+    const [deviceInfo, setDeviceInfo] = useState<ReturnType<typeof readDeviceInfo>>(null);
+    const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
+    const [lastChecked, setLastChecked] = useState(new Date());
+    const [pollingPaused, setPollingPaused] = useState(false);
+    const [connectionError, setConnectionError] = useState(false);
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+    const deviceTokenRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        const info = readDeviceInfo();
+        if (!info) {
+            router.visit(route("counter.setup"));
+            return;
+        }
+        setDeviceInfo(info);
+        deviceTokenRef.current = info.deviceToken;
+    }, []);
+
+    const pollSession = useCallback(async () => {
+        const token = deviceTokenRef.current;
+        if (!token || pollingPaused) return;
+
+        try {
+            const res = await axios.get<{ active: boolean; session?: ActiveSession }>(
+                "/api/counter/session/status",
+                { headers: { "X-Counter-Token": token }, timeout: 8_000 }
+            );
+
+            setLastChecked(new Date());
+            setConnectionError(false);
+
+            if (res.data.active && res.data.session) {
+                setPollingPaused(true);
+                setActiveSession(res.data.session);
+            }
+        } catch (err: any) {
+            if (err.response?.status === 401) {
+                clearDeviceState();
+                router.visit(route("counter.setup"));
+                return;
+            }
+            setConnectionError(true);
+        }
+    }, [pollingPaused]);
+
+    useEffect(() => {
+        if (!deviceInfo) return;
+        pollSession();
+        const interval = setInterval(pollSession, POLL_INTERVAL_MS);
+        return () => clearInterval(interval);
+    }, [deviceInfo, pollSession]);
+
+    const handleReset = () => {
+        setPollingPaused(true);
+        clearDeviceState();
+        router.visit(route("counter.setup"));
+    };
+
+    const handleFeedbackComplete = () => {
+        setActiveSession(null);
+        setPollingPaused(false);
+    };
+
+    if (!deviceInfo) {
+        return null;
+    }
+
+    return (
+        <AnimatePresence mode="wait">
+            {activeSession ? (
+                <FeedbackScreen key="feedback" session={activeSession} onComplete={handleFeedbackComplete} />
+            ) : (
+                <IdleScreen
+                    key="idle"
+                    deviceInfo={deviceInfo}
+                    now={now}
+                    lastChecked={lastChecked}
+                    connectionError={connectionError}
+                    onReset={handleReset}
+                    showResetConfirm={showResetConfirm}
+                    onResetConfirmChange={setShowResetConfirm}
+                />
+            )}
+        </AnimatePresence>
+    );
+}

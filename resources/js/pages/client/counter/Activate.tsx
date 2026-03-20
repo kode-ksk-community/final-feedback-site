@@ -110,14 +110,14 @@ function ScanLines() {
       <motion.div animate={{ opacity: [0.4, 1, 0.4] }}
         transition={{ duration: 2, repeat: Infinity }}>
         <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
-          <rect x="3" y="3" width="7" height="7" rx="1" stroke="#00ff88" strokeWidth="1.5"/>
-          <rect x="5" y="5" width="3" height="3" fill="#00ff88"/>
-          <rect x="14" y="3" width="7" height="7" rx="1" stroke="#00ff88" strokeWidth="1.5"/>
-          <rect x="16" y="5" width="3" height="3" fill="#00ff88"/>
-          <rect x="3" y="14" width="7" height="7" rx="1" stroke="#00ff88" strokeWidth="1.5"/>
-          <rect x="5" y="16" width="3" height="3" fill="#00ff88"/>
+          <rect x="3" y="3" width="7" height="7" rx="1" stroke="#00ff88" strokeWidth="1.5" />
+          <rect x="5" y="5" width="3" height="3" fill="#00ff88" />
+          <rect x="14" y="3" width="7" height="7" rx="1" stroke="#00ff88" strokeWidth="1.5" />
+          <rect x="16" y="5" width="3" height="3" fill="#00ff88" />
+          <rect x="3" y="14" width="7" height="7" rx="1" stroke="#00ff88" strokeWidth="1.5" />
+          <rect x="5" y="16" width="3" height="3" fill="#00ff88" />
           <path d="M14 14h2v2h-2zM18 14h3v1h-3zM14 17h1v3h-1zM17 17h1v1h-1zM19 17h2v2h-2zM16 20h5v1h-5z"
-            fill="#00ff88"/>
+            fill="#00ff88" />
         </svg>
       </motion.div>
     </div>
@@ -140,8 +140,10 @@ function SuccessBurst() {
         initial={{ scale: 0, rotate: -20 }} animate={{ scale: 1, rotate: 0 }}
         transition={{ type: "spring", stiffness: 300, damping: 18 }}
         className="relative z-10 w-20 h-20 rounded-full flex items-center justify-center"
-        style={{ background: "rgba(0,255,136,0.12)", border: "2px solid #00ff88",
-          fontSize: "30px", color: "#00ff88" }}>
+        style={{
+          background: "rgba(0,255,136,0.12)", border: "2px solid #00ff88",
+          fontSize: "30px", color: "#00ff88"
+        }}>
         ✓
       </motion.div>
     </div>
@@ -151,17 +153,18 @@ function SuccessBurst() {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ServicerActivation() {
-  const [pageState,    setPageState]    = useState<PageState>("loading");
-  const [counter,      setCounter]      = useState<CounterInfo | null>(null);
+  const [pageState, setPageState] = useState<PageState>("loading");
+  const [counter, setCounter] = useState<CounterInfo | null>(null);
   const [idleCounters, setIdleCounters] = useState<IdleCounter[]>([]);
-  const [errorMsg,     setErrorMsg]     = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
   const [servicerName, setServicerName] = useState("");  // from success response
 
   // Form fields (only used in guest / login state)
-  const [email,      setEmail]      = useState("");
-  const [password,   setPassword]   = useState("");
-  const [showPass,   setShowPass]   = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const counterToken = getCounterToken();
 
@@ -182,12 +185,23 @@ export default function ServicerActivation() {
          * 403 → counter/branch inactive
          * 409 → counter busy → { message, idle_counters }
          */
-        const infoRes = await axios.get<{ counter: CounterInfo }>(
+        const infoRes = await axios.get<{
+          counter: CounterInfo;
+          session_owner?: boolean;
+          servicer_name?: string;
+        }>(
           "/api/counter/activate-info",
           { params: { counter_token: counterToken } }
         );
         const counterData = infoRes.data.counter;
         setCounter(counterData);
+
+        // If user already owns this counter session, show success immediately
+        if (infoRes.data.session_owner && infoRes.data.servicer_name) {
+          setServicerName(infoRes.data.servicer_name);
+          setPageState("success");
+          return;
+        }
 
         /**
          * Step 2: Try auto-activate via PATH A (already logged in).
@@ -215,7 +229,7 @@ export default function ServicerActivation() {
 
         } catch (autoErr: any) {
           const autoStatus = autoErr.response?.status;
-          const autoData   = autoErr.response?.data;
+          const autoData = autoErr.response?.data;
 
           if (autoStatus === 422 && autoData?.requires_login) {
             // Not logged in — show the login form (PATH B)
@@ -256,7 +270,7 @@ export default function ServicerActivation() {
     setFieldErrors({});
 
     if (!email.trim()) { setFieldErrors({ email: "Email is required." }); return; }
-    if (!password)     { setFieldErrors({ password: "Password is required." }); return; }
+    if (!password) { setFieldErrors({ password: "Password is required." }); return; }
 
     setPageState("submitting");
 
@@ -278,7 +292,7 @@ export default function ServicerActivation() {
         already_logged_in: boolean;
       }>("/api/counter/activate-session", {
         counter_token: counterToken,
-        email:         email.trim(),
+        email: email.trim(),
         password,
       });
 
@@ -286,14 +300,14 @@ export default function ServicerActivation() {
       setPageState("success");
 
     } catch (err: any) {
-      const status  = err.response?.status;
+      const status = err.response?.status;
       const message = err.response?.data?.message;
-      const errors  = err.response?.data?.errors;
+      const errors = err.response?.data?.errors;
 
       if (status === 422) {
-        if (errors?.email)    setFieldErrors(p => ({ ...p, email:    errors.email[0] }));
+        if (errors?.email) setFieldErrors(p => ({ ...p, email: errors.email[0] }));
         if (errors?.password) setFieldErrors(p => ({ ...p, password: errors.password[0] }));
-        if (!errors)          setFieldErrors({ password: message ?? "Invalid email or password." });
+        if (!errors) setFieldErrors({ password: message ?? "Invalid email or password." });
         setPageState("login");
       } else if (status === 409) {
         setIdleCounters(err.response.data.idle_counters ?? []);
@@ -315,6 +329,37 @@ export default function ServicerActivation() {
     }
   };
 
+  // ── Logout from counter session ─────────────────────────────────────────
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+
+    try {
+      const res = await axios.post<{
+        success: boolean;
+        message: string;
+      }>("/api/counter/session/end", {
+        counter_token: counterToken,
+      });
+
+      if (res.data.success) {
+        // Show a brief confirmation then redirect
+        setErrorMsg("Session ended. Thank you!");
+        setPageState("error");
+
+        // Redirect after a short delay
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 2000);
+      }
+    } catch (err: any) {
+      const message = err.response?.data?.message ?? "Failed to end session. Please try again.";
+      setErrorMsg(message);
+      setPageState("error");
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -332,23 +377,29 @@ export default function ServicerActivation() {
           <div className="absolute bottom-[-10%] right-[10%] w-44 h-44 rounded-full opacity-10"
             style={{ background: "radial-gradient(circle,#3b82f6,transparent 70%)", filter: "blur(40px)" }} />
           <div className="absolute inset-0 opacity-[0.04]"
-            style={{ backgroundImage: `linear-gradient(rgba(0,255,136,.4) 1px,transparent 1px),
+            style={{
+              backgroundImage: `linear-gradient(rgba(0,255,136,.4) 1px,transparent 1px),
                       linear-gradient(90deg,rgba(0,255,136,.4) 1px,transparent 1px)`,
-              backgroundSize: "40px 40px" }} />
+              backgroundSize: "40px 40px"
+            }} />
         </div>
 
         {/* Logo bar */}
         <div className="relative z-10 flex items-center justify-between px-7 pt-10 pb-2">
-          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: "15px",
-            fontWeight: 800, color: "#00ff88", letterSpacing: "0.05em" }}>
+          <span style={{
+            fontFamily: "'Syne', sans-serif", fontSize: "15px",
+            fontWeight: 800, color: "#00ff88", letterSpacing: "0.05em"
+          }}>
             FEEDBACK<span style={{ color: "rgba(255,255,255,0.3)" }}>PRO</span>
           </span>
           <div className="flex items-center gap-2 px-3 py-1 rounded-full"
             style={{ background: "rgba(0,255,136,0.08)", border: "1px solid rgba(0,255,136,0.2)" }}>
             <div className="w-1.5 h-1.5 rounded-full"
               style={{ background: "#00ff88", boxShadow: "0 0 6px #00ff88", animation: "pulse 2s infinite" }} />
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px",
-              color: "#00ff88", letterSpacing: "0.08em" }}>SECURE</span>
+            <span style={{
+              fontFamily: "'DM Mono', monospace", fontSize: "10px",
+              color: "#00ff88", letterSpacing: "0.08em"
+            }}>SECURE</span>
           </div>
         </div>
 
@@ -363,12 +414,16 @@ export default function ServicerActivation() {
                 className="flex flex-col items-center gap-7 text-center">
                 <ScanLines />
                 <div>
-                  <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "20px",
-                    fontWeight: 700, color: "#f8fafc", marginBottom: "8px" }}>
+                  <p style={{
+                    fontFamily: "'Syne', sans-serif", fontSize: "20px",
+                    fontWeight: 700, color: "#f8fafc", marginBottom: "8px"
+                  }}>
                     Verifying Counter
                   </p>
-                  <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                    color: "rgba(248,250,252,0.4)" }}>
+                  <p style={{
+                    fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
+                    color: "rgba(248,250,252,0.4)"
+                  }}>
                     Please wait...
                   </p>
                 </div>
@@ -387,27 +442,37 @@ export default function ServicerActivation() {
                 <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                   transition={{ delay: 0.1 }}
                   className="rounded-2xl p-5 relative overflow-hidden"
-                  style={{ background: "rgba(0,255,136,0.06)",
-                    border: "1px solid rgba(0,255,136,0.2)" }}>
+                  style={{
+                    background: "rgba(0,255,136,0.06)",
+                    border: "1px solid rgba(0,255,136,0.2)"
+                  }}>
                   <div className="absolute top-0 right-0 w-24 h-24 opacity-15 pointer-events-none"
-                    style={{ background: "radial-gradient(circle,#00ff88,transparent 70%)",
-                      filter: "blur(16px)" }} />
+                    style={{
+                      background: "radial-gradient(circle,#00ff88,transparent 70%)",
+                      filter: "blur(16px)"
+                    }} />
                   <div className="relative z-10">
                     <div className="flex items-center gap-2 mb-3">
                       <div className="w-2 h-2 rounded-full"
                         style={{ background: "#00ff88", boxShadow: "0 0 6px #00ff88" }} />
-                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px",
-                        color: "#00ff88", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                      <span style={{
+                        fontFamily: "'DM Mono', monospace", fontSize: "10px",
+                        color: "#00ff88", letterSpacing: "0.08em", textTransform: "uppercase"
+                      }}>
                         Activating
                       </span>
                     </div>
-                    <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "28px",
+                    <p style={{
+                      fontFamily: "'Syne', sans-serif", fontSize: "28px",
                       fontWeight: 800, color: "#f8fafc", letterSpacing: "-0.02em",
-                      marginBottom: "3px" }}>
+                      marginBottom: "3px"
+                    }}>
                       {counter.name}
                     </p>
-                    <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "14px",
-                      color: "rgba(248,250,252,0.5)" }}>
+                    <p style={{
+                      fontFamily: "'DM Sans', sans-serif", fontSize: "14px",
+                      color: "rgba(248,250,252,0.5)"
+                    }}>
                       {counter.branch_name}
                     </p>
                   </div>
@@ -415,13 +480,17 @@ export default function ServicerActivation() {
 
                 {/* Heading */}
                 <div>
-                  <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "24px",
+                  <h1 style={{
+                    fontFamily: "'Syne', sans-serif", fontSize: "24px",
                     fontWeight: 800, color: "#f8fafc", letterSpacing: "-0.02em",
-                    marginBottom: "6px" }}>
+                    marginBottom: "6px"
+                  }}>
                     Sign in to activate
                   </h1>
-                  <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                    color: "rgba(248,250,252,0.4)", lineHeight: 1.5 }}>
+                  <p style={{
+                    fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
+                    color: "rgba(248,250,252,0.4)", lineHeight: 1.5
+                  }}>
                     Use your staff account credentials.
                     You must be assigned to {counter.branch_name}.
                   </p>
@@ -429,15 +498,17 @@ export default function ServicerActivation() {
 
                 {/* Email field */}
                 <div>
-                  <label style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+                  <label style={{
+                    fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
                     fontWeight: 600, color: "rgba(248,250,252,0.7)",
-                    display: "block", marginBottom: "7px" }}>
+                    display: "block", marginBottom: "7px"
+                  }}>
                     Email address
                   </label>
                   <input
                     type="email"
                     value={email}
-                    onChange={e => { setEmail(e.target.value); setFieldErrors(p => ({...p, email: undefined})); }}
+                    onChange={e => { setEmail(e.target.value); setFieldErrors(p => ({ ...p, email: undefined })); }}
                     placeholder="your@email.com"
                     autoComplete="email"
                     disabled={pageState === "submitting"}
@@ -455,8 +526,10 @@ export default function ServicerActivation() {
                     {fieldErrors.email && (
                       <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
-                        style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-                          color: "#ef4444", marginTop: "5px" }}>
+                        style={{
+                          fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+                          color: "#ef4444", marginTop: "5px"
+                        }}>
                         {fieldErrors.email}
                       </motion.p>
                     )}
@@ -465,16 +538,18 @@ export default function ServicerActivation() {
 
                 {/* Password field */}
                 <div>
-                  <label style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+                  <label style={{
+                    fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
                     fontWeight: 600, color: "rgba(248,250,252,0.7)",
-                    display: "block", marginBottom: "7px" }}>
+                    display: "block", marginBottom: "7px"
+                  }}>
                     Password
                   </label>
                   <div className="relative">
                     <input
                       type={showPass ? "text" : "password"}
                       value={password}
-                      onChange={e => { setPassword(e.target.value); setFieldErrors(p => ({...p, password: undefined})); }}
+                      onChange={e => { setPassword(e.target.value); setFieldErrors(p => ({ ...p, password: undefined })); }}
                       placeholder="••••••••"
                       autoComplete="current-password"
                       disabled={pageState === "submitting"}
@@ -488,9 +563,11 @@ export default function ServicerActivation() {
                       }}
                     />
                     <button type="button" onClick={() => setShowPass(p => !p)}
-                      style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                      style={{
+                        position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
                         background: "none", border: "none", cursor: "pointer",
-                        color: "rgba(248,250,252,0.4)", fontSize: "15px", padding: 0 }}>
+                        color: "rgba(248,250,252,0.4)", fontSize: "15px", padding: 0
+                      }}>
                       {showPass ? "🙈" : "👁"}
                     </button>
                   </div>
@@ -498,8 +575,10 @@ export default function ServicerActivation() {
                     {fieldErrors.password && (
                       <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
-                        style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-                          color: "#ef4444", marginTop: "5px" }}>
+                        style={{
+                          fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+                          color: "#ef4444", marginTop: "5px"
+                        }}>
                         {fieldErrors.password}
                       </motion.p>
                     )}
@@ -525,9 +604,11 @@ export default function ServicerActivation() {
                 >
                   {pageState === "submitting" ? (
                     <>
-                      <div style={{ width: 16, height: 16, borderRadius: "50%",
+                      <div style={{
+                        width: 16, height: 16, borderRadius: "50%",
                         border: "2px solid rgba(8,14,26,0.4)", borderTopColor: "#080e1a",
-                        animation: "spin .7s linear infinite" }} />
+                        animation: "spin .7s linear infinite"
+                      }} />
                       Signing in...
                     </>
                   ) : "Activate Counter →"}
@@ -544,40 +625,83 @@ export default function ServicerActivation() {
               >
                 <SuccessBurst />
                 <div>
-                  <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "26px",
+                  <p style={{
+                    fontFamily: "'Syne', sans-serif", fontSize: "26px",
                     fontWeight: 800, color: "#f8fafc", letterSpacing: "-0.02em",
-                    marginBottom: "8px" }}>
+                    marginBottom: "8px"
+                  }}>
                     Session Active!
                   </p>
-                  <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "14px",
-                    color: "rgba(248,250,252,0.5)", lineHeight: 1.6 }}>
+                  <p style={{
+                    fontFamily: "'DM Sans', sans-serif", fontSize: "14px",
+                    color: "rgba(248,250,252,0.5)", lineHeight: 1.6
+                  }}>
                     {servicerName && <>{servicerName} · </>}
                     {counter?.name} · {counter?.branch_name}<br />
                     is now ready for customers.
                   </p>
                 </div>
                 <div className="w-full rounded-2xl p-4"
-                  style={{ background: "rgba(0,255,136,0.06)",
-                    border: "1px solid rgba(0,255,136,0.15)" }}>
+                  style={{
+                    background: "rgba(0,255,136,0.06)",
+                    border: "1px solid rgba(0,255,136,0.15)"
+                  }}>
                   <div className="flex justify-between items-center mb-2">
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px",
-                      color: "rgba(248,250,252,0.35)", letterSpacing: "0.06em" }}>COUNTER</span>
-                    <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                      color: "#f8fafc", fontWeight: 500 }}>{counter.name}</span>
+                    <span style={{
+                      fontFamily: "'DM Mono', monospace", fontSize: "10px",
+                      color: "rgba(248,250,252,0.35)", letterSpacing: "0.06em"
+                    }}>COUNTER</span>
+                    <span style={{
+                      fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
+                      color: "#f8fafc", fontWeight: 500
+                    }}>{counter.name}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px",
-                      color: "rgba(248,250,252,0.35)", letterSpacing: "0.06em" }}>STARTED</span>
-                    <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                      color: "#00ff88", fontWeight: 500 }}>
+                    <span style={{
+                      fontFamily: "'DM Mono', monospace", fontSize: "10px",
+                      color: "rgba(248,250,252,0.35)", letterSpacing: "0.06em"
+                    }}>STARTED</span>
+                    <span style={{
+                      fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
+                      color: "#00ff88", fontWeight: 500
+                    }}>
                       {new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}
                     </span>
                   </div>
                 </div>
-                <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-                  color: "rgba(248,250,252,0.25)", textAlign: "center" }}>
+                <p style={{
+                  fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+                  color: "rgba(248,250,252,0.25)", textAlign: "center"
+                }}>
                   You can close this page. The counter is now live.
                 </p>
+                <motion.button
+                  whileHover={!isLoggingOut ? { scale: 1.02 } : {}}
+                  whileTap={!isLoggingOut ? { scale: 0.97 } : {}}
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  style={{
+                    width: "100%", padding: "12px", borderRadius: 12, border: "1px solid rgba(239,68,68,0.5)",
+                    background: isLoggingOut ? "rgba(239,68,68,0.2)" : "transparent",
+                    color: "#ef4444",
+                    fontFamily: "'Syne', sans-serif", fontSize: "14px", fontWeight: 700,
+                    cursor: isLoggingOut ? "not-allowed" : "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    letterSpacing: "-0.01em",
+                    marginTop: "12px"
+                  }}
+                >
+                  {isLoggingOut ? (
+                    <>
+                      <div style={{
+                        width: 14, height: 14, borderRadius: "50%",
+                        border: "2px solid rgba(239,68,68,0.4)", borderTopColor: "#ef4444",
+                        animation: "spin .7s linear infinite"
+                      }} />
+                      Logging out...
+                    </>
+                  ) : "End Session"}
+                </motion.button>
               </motion.div>
             )}
 
@@ -592,17 +716,23 @@ export default function ServicerActivation() {
                   <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
                     transition={{ type: "spring", stiffness: 280, damping: 18 }}
                     className="w-16 h-16 rounded-full flex items-center justify-center text-2xl"
-                    style={{ background: "rgba(249,115,22,0.12)",
-                      border: "2px solid rgba(249,115,22,0.4)" }}>
+                    style={{
+                      background: "rgba(249,115,22,0.12)",
+                      border: "2px solid rgba(249,115,22,0.4)"
+                    }}>
                     🔒
                   </motion.div>
                   <div>
-                    <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "20px",
-                      fontWeight: 800, color: "#f8fafc", marginBottom: "6px" }}>
+                    <p style={{
+                      fontFamily: "'Syne', sans-serif", fontSize: "20px",
+                      fontWeight: 800, color: "#f8fafc", marginBottom: "6px"
+                    }}>
                       Counter Occupied
                     </p>
-                    <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                      color: "rgba(248,250,252,0.4)", lineHeight: 1.6 }}>
+                    <p style={{
+                      fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
+                      color: "rgba(248,250,252,0.4)", lineHeight: 1.6
+                    }}>
                       This counter is currently in use.<br />
                       Pick another counter below.
                     </p>
@@ -611,9 +741,11 @@ export default function ServicerActivation() {
 
                 {idleCounters.length > 0 ? (
                   <div className="flex flex-col gap-3">
-                    <p style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px",
+                    <p style={{
+                      fontFamily: "'DM Mono', monospace", fontSize: "10px",
                       color: "rgba(248,250,252,0.35)", letterSpacing: "0.08em",
-                      textTransform: "uppercase" }}>
+                      textTransform: "uppercase"
+                    }}>
                       Available counters
                     </p>
                     {idleCounters.map((ic, i) => (
@@ -623,16 +755,22 @@ export default function ServicerActivation() {
                         whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
                         onClick={() => handlePickCounter(ic)}
                         className="w-full p-4 rounded-2xl text-left flex items-center justify-between"
-                        style={{ background: "rgba(0,255,136,0.05)",
-                          border: "1px solid rgba(0,255,136,0.15)", cursor: "pointer" }}>
+                        style={{
+                          background: "rgba(0,255,136,0.05)",
+                          border: "1px solid rgba(0,255,136,0.15)", cursor: "pointer"
+                        }}>
                         <div>
-                          <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "15px",
-                            fontWeight: 700, color: "#f8fafc", marginBottom: "2px" }}>
+                          <p style={{
+                            fontFamily: "'Syne', sans-serif", fontSize: "15px",
+                            fontWeight: 700, color: "#f8fafc", marginBottom: "2px"
+                          }}>
                             {ic.name}
                           </p>
                           {ic.description && (
-                            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-                              color: "rgba(248,250,252,0.4)" }}>
+                            <p style={{
+                              fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+                              color: "rgba(248,250,252,0.4)"
+                            }}>
                               {ic.description}
                             </p>
                           )}
@@ -662,18 +800,24 @@ export default function ServicerActivation() {
                 <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
                   transition={{ type: "spring", stiffness: 280, damping: 18 }}
                   className="w-18 h-18 rounded-full flex items-center justify-center text-3xl"
-                  style={{ width: 72, height: 72,
+                  style={{
+                    width: 72, height: 72,
                     background: "rgba(239,68,68,0.12)",
-                    border: "2px solid rgba(239,68,68,0.35)", color: "#ef4444" }}>
+                    border: "2px solid rgba(239,68,68,0.35)", color: "#ef4444"
+                  }}>
                   ✕
                 </motion.div>
                 <div>
-                  <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "20px",
-                    fontWeight: 800, color: "#f8fafc", marginBottom: "8px" }}>
+                  <p style={{
+                    fontFamily: "'Syne', sans-serif", fontSize: "20px",
+                    fontWeight: 800, color: "#f8fafc", marginBottom: "8px"
+                  }}>
                     Invalid QR Code
                   </p>
-                  <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                    color: "rgba(248,250,252,0.4)", lineHeight: 1.6 }}>
+                  <p style={{
+                    fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
+                    color: "rgba(248,250,252,0.4)", lineHeight: 1.6
+                  }}>
                     {errorMsg}
                   </p>
                 </div>

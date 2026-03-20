@@ -18,7 +18,7 @@ Route::get('/counter', function () {
 })->name('home');
 
 Route::get('/waiting', function () {
-    return Inertia::render('client/Idle');
+    return Inertia::render('client/counter/Active');
 });
 
 Route::get('/feedback', function () {

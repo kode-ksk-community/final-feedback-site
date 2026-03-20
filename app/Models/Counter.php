@@ -131,7 +131,10 @@ class Counter extends Model
     }
 
     /**
-     * Generate and assign a new device token to this counter.
+     * Get or generate a device token for this counter.
+     * If a token already exists, returns it without regenerating.
+     * Only generates a new token on first call or if explicitly changed by admin.
+     *
      * Called when a device successfully logs in with the correct PIN.
      * The token is returned once and stored in the device's localStorage.
      *
@@ -139,6 +142,12 @@ class Counter extends Model
      */
     public function issueDeviceToken(): string
     {
+        // If token already exists, return it (don't regenerate)
+        if ($this->device_token) {
+            return $this->device_token;
+        }
+
+        // Only generate if token doesn't exist
         $token = Str::random(64);
         $this->update(['device_token' => $token]);
         return $token;

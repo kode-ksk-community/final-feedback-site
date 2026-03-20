@@ -20,8 +20,19 @@ Route::get('/branches/{branch}/counters', [Countersetupcontroller::class, 'count
 Route::post('/counter/activate-device', [Countersetupcontroller::class, 'activateDevice']);
 
 // Servicer Activation (scanning counter QR code)
-Route::get('/counter/activate-info', [Serviceractivationcontroller::class, 'info']);
-Route::post('/counter/activate-session', [Serviceractivationcontroller::class, 'activateSession']);
+// Needs 'web' middleware to access Laravel session and check session ownership
+Route::middleware('web', 'throttle:5,1')->get('/counter/activate-info', [Serviceractivationcontroller::class, 'info'])
+    ->name('counter.activate-info');
+
+// Session activation requires session middleware for Laravel session cookies
+// Uses smart rate limiting: only rate limits unauthenticated guests, not logged-in users
+Route::middleware('web', \App\Http\Middleware\ThrottleAuthenticatedActivation::class)
+    ->post('/counter/activate-session', [Serviceractivationcontroller::class, 'activateSession'])
+    ->name('counter.activate-session');
+
+// Session logout - authenticated users (no rate limit)
+Route::middleware('web')->post('/counter/session/end', [Serviceractivationcontroller::class, 'endSession'])
+    ->name('counter.session.end');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COUNTER DEVICE API (requires device token)
@@ -30,7 +41,7 @@ Route::post('/counter/activate-session', [Serviceractivationcontroller::class, '
 Route::middleware('device.token')->prefix('counter')->group(function () {
     // Session polling (called every 4 seconds by counter idle screen)
     Route::get('/session/status', [CounterSessionController::class, 'status']);
-    
+
     // Feedback data and submission
     Route::get('/feedback-data', [FeedbackController::class, 'data']);
     Route::post('/feedback', [FeedbackController::class, 'store']);

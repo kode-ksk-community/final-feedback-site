@@ -76,7 +76,7 @@ class CounterSetupController extends Controller
      */
     public function idle(): InertiaResponse
     {
-        return Inertia::render('client/counter/Idle');
+        return Inertia::render('client/counter/Active');
     }
 
     // ─── Step 2: Get counters for a branch ────────────────────────────────────
@@ -163,7 +163,7 @@ class CounterSetupController extends Controller
         // Verify the PIN against the hashed value stored in the database
         // This is the ONLY place PIN verification happens — never client-side
 
-        
+
         // if (! Hash::check($validated['pin'], $counter->pin)) {
         //     return response()->json([
         //         'message' => 'Incorrect PIN. Please try again.',
