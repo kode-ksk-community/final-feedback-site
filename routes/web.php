@@ -3,11 +3,12 @@
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\BranchController;
-use App\Http\Controllers\Client\CounterSetupController;
-use App\Http\Controllers\Client\ServicerActivationController;
 use App\Http\Controllers\CounterController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\TagController;
+use App\Http\Controllers\FeedbackController;
+use App\Http\Controllers\Client\CounterSetupController;
+use App\Http\Controllers\Client\ServicerActivationController;
 
 Route::get('/', function () {
     return Inertia::render('landing-page');
@@ -48,6 +49,7 @@ Route::get('/admin/users', [UserController::class, 'index'])->name('admin.users.
 Route::get('/admin/tags', [TagController::class, 'index'])->name('admin.tags.index');
 Route::get('/admin/branches', [BranchController::class, 'index'])->name('admin.branches.index');
 Route::get('/admin/counters', [CounterController::class, 'index'])->name('admin.counters.index');
+Route::get('/admin/feedback', [FeedbackController::class, 'index'])->name('admin.feedback.index');
 
 // Admin API routes for tags CRUD
 Route::middleware(['auth'])->group(function () {

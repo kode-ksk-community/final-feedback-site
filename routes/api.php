@@ -1,103 +1,52 @@
 <?php
 
-use App\Http\Controllers\Counter\CounterSetupController;
-use App\Http\Controllers\Counter\CounterSessionController;
-use App\Http\Controllers\Counter\CounterFeedbackController;
-use App\Http\Controllers\Counter\ServicerActivationController;
-use App\Http\Controllers\Servicer\ServicerController;
-use App\Http\Controllers\Manager\ManagerController;
-use App\Http\Controllers\Admin\BranchController;
-use App\Http\Controllers\Admin\CounterController;
-use App\Http\Controllers\Admin\UserController;
-use App\Http\Controllers\Admin\TagController;
-use App\Http\Controllers\Admin\FeedbackController;
-use App\Http\Controllers\Admin\SystemSettingController;
-use App\Http\Controllers\Client\CounterSessionController as ClientCounterSessionController;
-use App\Http\Controllers\Client\CounterSetupController as ClientCounterSetupController;
-use App\Http\Controllers\Client\ServicerActivationController as ClientServicerActivationController;
+use App\Http\Controllers\Client\Countersetupcontroller;
+use App\Http\Controllers\Client\CounterSessionController;
+use App\Http\Controllers\Client\CounterFeedbackController;
+use App\Http\Controllers\Client\Serviceractivationcontroller;
+use App\Http\Controllers\BranchController;
+use App\Http\Controllers\CounterController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\TagController;
+use App\Http\Controllers\FeedbackController;
 use Illuminate\Support\Facades\Route;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC API ROUTES (no authentication required)
+// ─────────────────────────────────────────────────────────────────────────────
 
-Route::get('/branches/{branch}/counters', [ClientCounterSetupController::class, 'counters']);
-Route::post('/counter/activate-device',   [ClientCounterSetupController::class, 'activateDevice']);
-Route::get('/counter/session/status', [ClientCounterSessionController::class, 'status']);
-Route::get('/counter/activate-info',    [ClientServicerActivationController::class, 'info']);
-Route::post('/counter/activate-session', [ClientServicerActivationController::class, 'activateSession'])->middleware('web');
-// /*
-// |--------------------------------------------------------------------------
-// | API Routes
-// |--------------------------------------------------------------------------
-// |
-// | All routes here return JSON.
-// | Prefix: /api  (set in bootstrap/app.php or RouteServiceProvider)
-// |
-// | Custom middleware used:
-// |   device.token   → validates X-Counter-Token header against counters.device_token
-// |   auth:sanctum   → standard Laravel Sanctum token auth for staff
-// |   role:X         → checks authenticated user's role
-// |
-// */
+// Counter Device Setup (Step 1-3 of counter login flow)
+Route::get('/branches/{branch}/counters', [Countersetupcontroller::class, 'counters']);
+Route::post('/counter/activate-device', [Countersetupcontroller::class, 'activateDevice']);
 
-// // ─── Counter Device Setup (no auth, no device token) ─────────────────────────
+// Servicer Activation (scanning counter QR code)
+Route::get('/counter/activate-info', [Serviceractivationcontroller::class, 'info']);
+Route::post('/counter/activate-session', [Serviceractivationcontroller::class, 'activateSession']);
 
-// /*
-//  * GET /api/branches/{branch}/counters
-//  * Used by CounterSetup.tsx Step 2 to load counters after branch selection.
-//  */
-// Route::get('/branches/{branch}/counters', [CounterSetupController::class, 'counters']);
+// ─────────────────────────────────────────────────────────────────────────────
+// COUNTER DEVICE API (requires device token)
+// ─────────────────────────────────────────────────────────────────────────────
 
-// /*
-//  * POST /api/counter/activate-device
-//  * Verifies PIN and issues device_token.
-//  * Body: { counter_id, pin }
-//  */
-// Route::post('/counter/activate-device', [CounterSetupController::class, 'activateDevice']);
+Route::middleware('device.token')->prefix('counter')->group(function () {
+    // Session polling (called every 4 seconds by counter idle screen)
+    Route::get('/session/status', [CounterSessionController::class, 'status']);
+    
+    // Feedback data and submission
+    Route::get('/feedback-data', [FeedbackController::class, 'data']);
+    Route::post('/feedback', [FeedbackController::class, 'store']);
+});
 
-// // ─── Counter Device (requires valid device_token header) ─────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTHENTICATED API ROUTES (staff only)
+// ─────────────────────────────────────────────────────────────────────────────
 
-// /*
-//  * All routes in this group require the X-Counter-Token header.
-//  * The DeviceTokenMiddleware validates it against counters.device_token
-//  * and attaches the Counter model to the request as $request->counter.
-//  */
-// Route::middleware('device.token')->prefix('counter')->group(function () {
-
-//     /*
-//      * GET /api/counter/session/status
-//      * Polled every 4s by CounterIdle.tsx to detect when a servicer activates.
-//      * Response: {
-//      *   active: bool,
-//      *   session?: { id, servicer_name, started_at }
-//      * }
-//      */
-//     Route::get('/session/status', [CounterSessionController::class, 'status']);
-
-//     /*
-//      * GET /api/counter/feedback-data
-//      * Called by CounterFeedback.tsx on mount to load servicer + tags.
-//      * Response: {
-//      *   servicer: { id, name, avatar_url },
-//      *   tags: Tag[]
-//      * }
-//      */
-//     Route::get('/feedback-data', [CounterFeedbackController::class, 'data']);
-
-//     /*
-//      * POST /api/feedback
-//      * Anonymous customer feedback submission.
-//      * Body: { rating, tag_ids?, comment? }
-//      * Response: { success: true, message: string }
-//      */
-//     Route::post('/submit-feedback', [CounterFeedbackController::class, 'store']);
-// });
-
-// // ─── Servicer QR Activation (no auth — token in query string) ────────────────
-
-// /*
-//  * GET /api/counter/activate?token={qr_token}
-//  * Called by ServicerActivation.tsx on mount to validate the QR token.
-//  * Response: {
-//  *   servicer: { id, name },
+Route::middleware('auth:sanctum')->group(function () {
+    // Feedback analytics and reporting
+    Route::get('/feedback/analytics', [FeedbackController::class, 'analytics']);
+    Route::get('/feedback/top-tags', [FeedbackController::class, 'topTags']);
+    Route::get('/feedback', [FeedbackController::class, 'index']);
+    Route::delete('/feedback/{feedback}', [FeedbackController::class, 'destroy']);
+});
 //  *   counter:  { id, name, branch_name, branch_id }
 //  * }
 //  * Errors: 404 (invalid token), 403 (token expired/revoked), 409 (counter busy)
