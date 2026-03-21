@@ -49,6 +49,20 @@ interface RatingLevel {
     text: string;
 }
 
+interface ApiError {
+    message: string;
+    code?: string;
+    details?: any;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const POLL_INTERVAL_MS = 4_000;
+const WELCOME_DELAY_MS = 800;
+const THANK_YOU_DURATION = 4;
+const MAX_RETRY_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 1000;
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 4_000;
@@ -102,6 +116,70 @@ function useClock() {
         return () => clearInterval(t);
     }, []);
     return now;
+}
+
+/**
+ * Enhanced API error handler with retry logic
+ */
+function useApiWithRetry() {
+    const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+    useEffect(() => {
+        const handleOnline = () => setIsOnline(true);
+        const handleOffline = () => setIsOnline(false);
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
+
+    const apiCall = useCallback(async<T>(
+        apiFunction: () => Promise<T>,
+        options: {
+            maxRetries?: number;
+            retryDelay?: number;
+            onRetry?: (attempt: number, error: any) => void;
+        } = {}
+    ): Promise<T> => {
+        const { maxRetries = MAX_RETRY_ATTEMPTS, retryDelay = RETRY_DELAY_MS, onRetry } = options;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                if (!isOnline && attempt === 1) {
+                    throw new Error('No internet connection');
+                }
+
+                return await apiFunction();
+            } catch (error: any) {
+                const isLastAttempt = attempt === maxRetries;
+                const isNetworkError = !error.response || error.code === 'NETWORK_ERROR';
+                const shouldRetry = !isLastAttempt && (isNetworkError || error.response?.status >= 500);
+
+                if (shouldRetry) {
+                    onRetry?.(attempt, error);
+                    await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
+                    continue;
+                }
+
+                // Transform error for consistent handling
+                const apiError: ApiError = {
+                    message: error.response?.data?.message || error.message || 'An unexpected error occurred',
+                    code: error.response?.status?.toString() || 'UNKNOWN',
+                    details: error.response?.data
+                };
+
+                throw apiError;
+            }
+        }
+
+        throw new Error('Max retries exceeded');
+    }, [isOnline]);
+
+    return { apiCall, isOnline };
 }
 
 // ─── QR Code Component ────────────────────────────────────────────────────────
@@ -179,6 +257,9 @@ interface IdleScreenProps {
     onReset: () => void;
     showResetConfirm: boolean;
     onResetConfirmChange: (show: boolean) => void;
+    isOnline: boolean;
+    retryCount: number;
+    isInitialLoad: boolean;
 }
 
 function IdleScreen({
@@ -189,6 +270,9 @@ function IdleScreen({
     onReset,
     showResetConfirm,
     onResetConfirmChange,
+    isOnline,
+    retryCount,
+    isInitialLoad,
 }: IdleScreenProps) {
     const timeStr = now.toLocaleTimeString("en-US", {
         hour: "2-digit",
@@ -374,13 +458,27 @@ function IdleScreen({
                                 }}
                             >
                                 <motion.div
-                                    animate={{ opacity: [1, 0.3, 1] }}
-                                    transition={{ duration: 2, repeat: Infinity }}
+                                    animate={{
+                                        opacity: connectionError ? [1, 0.3, 1] : 1,
+                                        scale: retryCount > 0 ? [1, 1.2, 1] : 1
+                                    }}
+                                    transition={{
+                                        duration: connectionError ? 1.5 : 0.3,
+                                        repeat: connectionError ? Infinity : 0
+                                    }}
                                     className="w-1.5 h-1.5 rounded-full"
-                                    style={{ background: connectionError ? "#ef4444" : "#b48c64" }}
+                                    style={{
+                                        background: !isOnline ? "#ef4444" :
+                                            connectionError ? "#f97316" :
+                                                retryCount > 0 ? "#eab308" : "#b48c64"
+                                    }}
                                 />
                                 <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "10px", color: "#b48c64" }}>
-                                    {connectionError ? "Retrying..." : `Last checked: ${lastCheckedStr}`}
+                                    {!isOnline ? "Offline" :
+                                        isInitialLoad ? "Connecting..." :
+                                            connectionError ? `Retrying... (${retryCount})` :
+                                                retryCount > 0 ? `Reconnected` :
+                                                    `Last checked: ${lastCheckedStr}`}
                                 </span>
                             </div>
                         </motion.div>
@@ -816,6 +914,7 @@ function FeedbackScreen({ session, onComplete }: FeedbackScreenProps) {
 
 export default function CounterActive() {
     const now = useClock();
+    const { apiCall, isOnline } = useApiWithRetry();
 
     const [deviceInfo, setDeviceInfo] = useState<ReturnType<typeof readDeviceInfo>>(null);
     const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
@@ -823,6 +922,8 @@ export default function CounterActive() {
     const [pollingPaused, setPollingPaused] = useState(false);
     const [connectionError, setConnectionError] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [retryCount, setRetryCount] = useState(0);
+    const [isInitialLoad, setIsInitialLoad] = useState(true);
 
     const deviceTokenRef = useRef<string | null>(null);
 
@@ -841,27 +942,54 @@ export default function CounterActive() {
         if (!token || pollingPaused) return;
 
         try {
-            const res = await axios.get<{ active: boolean; session?: ActiveSession }>(
-                "/api/counter/session/status",
-                { headers: { "X-Counter-Token": token }, timeout: 8_000 }
+            const res = await apiCall(
+                () => axios.get<{ active: boolean; session?: ActiveSession }>(
+                    "/api/counter/session/status",
+                    {
+                        headers: { "X-Counter-Token": token },
+                        timeout: 8_000
+                    }
+                ),
+                {
+                    onRetry: (attempt, error) => {
+                        console.warn(`Session poll retry ${attempt}:`, error.message);
+                        setRetryCount(attempt);
+                    }
+                }
             );
 
             setLastChecked(new Date());
             setConnectionError(false);
+            setRetryCount(0);
+            setIsInitialLoad(false);
 
             if (res.data.active && res.data.session) {
                 setPollingPaused(true);
                 setActiveSession(res.data.session);
+            } else if (activeSession) {
+                // Session ended, reset to idle
+                setActiveSession(null);
+                setPollingPaused(false);
             }
-        } catch (err: any) {
-            if (err.response?.status === 401) {
+        } catch (error: any) {
+            console.error('Session polling failed:', error);
+
+            if (error.code === '401') {
+                // Device token invalid/expired
                 clearDeviceState();
                 router.visit(route("counter.setup"));
                 return;
             }
+
             setConnectionError(true);
+            setIsInitialLoad(false);
+
+            // Don't show error for network issues during normal polling
+            if (!isOnline) {
+                setConnectionError(true);
+            }
         }
-    }, [pollingPaused]);
+    }, [pollingPaused, apiCall, activeSession, isOnline]);
 
     useEffect(() => {
         if (!deviceInfo) return;
@@ -899,6 +1027,9 @@ export default function CounterActive() {
                     onReset={handleReset}
                     showResetConfirm={showResetConfirm}
                     onResetConfirmChange={setShowResetConfirm}
+                    isOnline={isOnline}
+                    retryCount={retryCount}
+                    isInitialLoad={isInitialLoad}
                 />
             )}
         </AnimatePresence>

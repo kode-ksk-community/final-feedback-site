@@ -13,10 +13,28 @@ class FeedbackController extends Controller
 {
     /**
      * Display admin feedback page with filtering and search.
+     * Optimized with eager loading to prevent N+1 queries.
      */
     public function index(): Response
     {
-        $feedbacks = Feedback::with(['counter.branch', 'servicer', 'tags'])
+        $feedbacks = Feedback::with([
+            'counter:id,name,branch_id',
+            'counter.branch:id,name',
+            'servicer:id,name',
+            'tags:id,name'
+        ])
+            ->select([
+                'id',
+                'counter_id',
+                'counter_session_id',
+                'servicer_id',
+                'branch_id',
+                'rating',
+                'sentiment_label',
+                'sentiment_score',
+                'comment',
+                'created_at'
+            ])
             ->orderBy('created_at', 'desc')
             ->paginate(50)
             ->through(function ($feedback) {
@@ -259,5 +277,127 @@ class FeedbackController extends Controller
             $score >= -0.6 => 'negative',
             default => 'very_negative',
         };
+    }
+
+    /**
+     * Get servicer performance metrics.
+     */
+    public function servicerPerformance(Request $request): JsonResponse
+    {
+        $startDate = $request->query('start_date', now()->subDays(30));
+        $endDate = $request->query('end_date', now());
+        $branchId = $request->query('branch_id');
+
+        $performance = Feedback::whereBetween('created_at', [$startDate, $endDate])
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->with('servicer:id,name')
+            ->selectRaw('
+                servicer_id,
+                COUNT(*) as total_feedbacks,
+                ROUND(AVG(rating), 2) as avg_rating,
+                ROUND(AVG(sentiment_score), 3) as avg_sentiment,
+                COUNT(CASE WHEN rating >= 4 THEN 1 END) as positive_feedbacks,
+                COUNT(CASE WHEN rating <= 2 THEN 1 END) as negative_feedbacks
+            ')
+            ->groupBy('servicer_id')
+            ->having('total_feedbacks', '>', 0)
+            ->orderByDesc('avg_rating')
+            ->get()
+            ->map(function ($item) {
+                $total = (int) $item->total_feedbacks;
+                return [
+                    'servicer_id' => $item->servicer_id,
+                    'servicer_name' => $item->servicer->name,
+                    'total_feedbacks' => $total,
+                    'average_rating' => (float) $item->avg_rating,
+                    'average_sentiment' => (float) $item->avg_sentiment,
+                    'positive_percentage' => $total > 0 ? round(($item->positive_feedbacks / $total) * 100, 1) : 0,
+                    'negative_percentage' => $total > 0 ? round(($item->negative_feedbacks / $total) * 100, 1) : 0,
+                ];
+            });
+
+        return response()->json($performance);
+    }
+
+    /**
+     * Get counter performance metrics.
+     */
+    public function counterPerformance(Request $request): JsonResponse
+    {
+        $startDate = $request->query('start_date', now()->subDays(30));
+        $endDate = $request->query('end_date', now());
+        $branchId = $request->query('branch_id');
+
+        $performance = Feedback::whereBetween('created_at', [$startDate, $endDate])
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->with('counter:id,name')
+            ->selectRaw('
+                counter_id,
+                COUNT(*) as total_feedbacks,
+                ROUND(AVG(rating), 2) as avg_rating,
+                ROUND(AVG(sentiment_score), 3) as avg_sentiment,
+                COUNT(CASE WHEN rating >= 4 THEN 1 END) as positive_feedbacks
+            ')
+            ->groupBy('counter_id')
+            ->having('total_feedbacks', '>', 0)
+            ->orderByDesc('avg_rating')
+            ->get()
+            ->map(function ($item) {
+                $total = (int) $item->total_feedbacks;
+                return [
+                    'counter_id' => $item->counter_id,
+                    'counter_name' => $item->counter->name,
+                    'total_feedbacks' => $total,
+                    'average_rating' => (float) $item->avg_rating,
+                    'average_sentiment' => (float) $item->avg_sentiment,
+                    'positive_percentage' => $total > 0 ? round(($item->positive_feedbacks / $total) * 100, 1) : 0,
+                ];
+            });
+
+        return response()->json($performance);
+    }
+
+    /**
+     * Get trend analysis over time.
+     */
+    public function trends(Request $request): JsonResponse
+    {
+        $period = $request->query('period', 'daily'); // daily, weekly, monthly
+        $startDate = $request->query('start_date', now()->subDays(30));
+        $endDate = $request->query('end_date', now());
+        $branchId = $request->query('branch_id');
+
+        $dateFormat = match ($period) {
+            'weekly' => 'DATE_FORMAT(created_at, "%Y-%u")',
+            'monthly' => 'DATE_FORMAT(created_at, "%Y-%m")',
+            default => 'DATE(created_at)',
+        };
+
+        $trends = Feedback::whereBetween('created_at', [$startDate, $endDate])
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
+            ->selectRaw("
+                {$dateFormat} as period,
+                COUNT(*) as total_feedbacks,
+                ROUND(AVG(rating), 2) as avg_rating,
+                ROUND(AVG(sentiment_score), 3) as avg_sentiment,
+                COUNT(CASE WHEN rating >= 4 THEN 1 END) as positive_count,
+                COUNT(CASE WHEN rating <= 2 THEN 1 END) as negative_count
+            ")
+            ->groupBy('period')
+            ->orderBy('period')
+            ->get()
+            ->map(function ($item) {
+                $total = (int) $item->total_feedbacks;
+                return [
+                    'period' => $item->period,
+                    'total_feedbacks' => $total,
+                    'average_rating' => (float) $item->avg_rating,
+                    'average_sentiment' => (float) $item->avg_sentiment,
+                    'positive_percentage' => $total > 0 ? round(($item->positive_count / $total) * 100, 1) : 0,
+                    'negative_percentage' => $total > 0 ? round(($item->negative_count / $total) * 100, 1) : 0,
+                ];
+            });
+
+        return response()->json($trends);
     }
 }

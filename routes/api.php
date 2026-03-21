@@ -55,6 +55,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Feedback analytics and reporting
     Route::get('/feedback/analytics', [FeedbackController::class, 'analytics']);
     Route::get('/feedback/top-tags', [FeedbackController::class, 'topTags']);
+    Route::get('/feedback/servicer-performance', [FeedbackController::class, 'servicerPerformance']);
+    Route::get('/feedback/counter-performance', [FeedbackController::class, 'counterPerformance']);
+    Route::get('/feedback/trends', [FeedbackController::class, 'trends']);
     Route::get('/feedback', [FeedbackController::class, 'index']);
     Route::delete('/feedback/{feedback}', [FeedbackController::class, 'destroy']);
 });

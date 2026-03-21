@@ -10,94 +10,104 @@ use App\Http\Controllers\FeedbackController;
 use App\Http\Controllers\Client\CounterSetupController;
 use App\Http\Controllers\Client\ServicerActivationController;
 
+// ────────────────────────────────────────────────────────────────────────────
+// PUBLIC PAGES (No authentication required)
+// ────────────────────────────────────────────────────────────────────────────
+
 Route::get('/', function () {
     return Inertia::render('landing-page');
 })->name('home');
-Route::get('/counter', function () {
-    return Inertia::render('client/CounterSetup');
-})->name('home');
 
-Route::get('/waiting', function () {
-    return Inertia::render('client/counter/Active');
-});
+// ────────────────────────────────────────────────────────────────────────────
+// COUNTER DEVICE PAGES (Servicer/Counter setup flow)
+// ────────────────────────────────────────────────────────────────────────────
 
-Route::get('/feedback', function () {
-    return Inertia::render('client/Customerfeedback');
-});
-Route::get('/servicer-activation', function () {
-    return Inertia::render('client/Serviceractivation');
-});
+Route::prefix('counter')
+    ->name('counter.')
+    ->group(function () {
+        // Step 1-3: Counter device setup (QR code scanning → counter selection → PIN)
+        Route::get('/setup', [CounterSetupController::class, 'show'])->name('setup');
 
+        // Idle screen: Waiting for servicer to login
+        Route::get('/idle', [CounterSetupController::class, 'idle'])->name('idle');
 
+        // Servicer login page (shows form for email/password or QR verification)
+        Route::get('/activate', [ServicerActivationController::class, 'show'])->name('activate');
+    });
 
-Route::get('/counter/setup', [CounterSetupController::class, 'show'])
-    ->name('counter.setup');
-Route::get('/counter/idle',  [CounterSetupController::class, 'idle'])
-    ->name('counter.idle');
+// ────────────────────────────────────────────────────────────────────────────
+// ADMIN DASHBOARD & PAGES
+// ────────────────────────────────────────────────────────────────────────────
 
-Route::get('/admin/dashboard', function () {
-    return Inertia::render('admin/dashboard');
-});
+Route::prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/dashboard', function () {
+            return Inertia::render('admin/dashboard');
+        })->name('dashboard');
 
-Route::post('/counter/activate-session', [ServicerActivationController::class, 'activateSession'])->middleware('web');
+        // Admin pages (views for managing entities)
+        Route::get('/users', [UserController::class, 'index'])->name('users.index');
+        Route::get('/tags', [TagController::class, 'index'])->name('tags.index');
+        Route::get('/branches', [BranchController::class, 'index'])->name('branches.index');
+        Route::get('/counters', [CounterController::class, 'index'])->name('counters.index');
+        Route::get('/feedback', [FeedbackController::class, 'index'])->name('feedback.index');
+    });
 
-Route::get('counter/activate', [ServicerActivationController::class, 'show'])->name('activate');
-
-
-
-Route::get('/admin/users', [UserController::class, 'index'])->name('admin.users.index');
-Route::get('/admin/tags', [TagController::class, 'index'])->name('admin.tags.index');
-Route::get('/admin/branches', [BranchController::class, 'index'])->name('admin.branches.index');
-Route::get('/admin/counters', [CounterController::class, 'index'])->name('admin.counters.index');
-Route::get('/admin/feedback', [FeedbackController::class, 'index'])->name('admin.feedback.index');
-
-// Admin API routes for tags CRUD
-Route::middleware(['auth'])->group(function () {
-    Route::post('/admin/tags', [TagController::class, 'store'])->name('admin.tags.store');
-    Route::put('/admin/tags/{tag}', [TagController::class, 'update'])->name('admin.tags.update');
-    Route::patch('/admin/tags/{tag}/toggle', [TagController::class, 'toggle'])->name('admin.tags.toggle');
-    Route::delete('/admin/tags/{tag}', [TagController::class, 'destroy'])->name('admin.tags.destroy');
-});
-Route::middleware(['auth'])->group(function () {
-    Route::post('/admin/branches', [BranchController::class, 'store'])->name('admin.branches.store');
-    Route::put('/admin/branches/{branch}', [BranchController::class, 'update'])->name('admin.branches.update');
-    Route::patch('/admin/branches/{branch}/toggle', [BranchController::class, 'toggle'])->name('admin.branches.toggle');
-    Route::delete('/admin/branches/{branch}', [BranchController::class, 'destroy'])->name('admin.branches.destroy');
-});
-
-// Admin API routes for counters CRUD
-Route::middleware(['auth'])->group(function () {
-    Route::post('/admin/counters', [CounterController::class, 'store'])->name('admin.counters.store');
-    Route::put('/admin/counters/{counter}', [CounterController::class, 'update'])->name('admin.counters.update');
-    Route::patch('/admin/counters/{counter}/toggle', [CounterController::class, 'toggle'])->name('admin.counters.toggle');
-    Route::patch('/admin/counters/{counter}/force-end-session', [CounterController::class, 'forceEndSession'])->name('admin.counters.force-end-session');
-    Route::delete('/admin/counters/{counter}', [CounterController::class, 'destroy'])->name('admin.counters.destroy');
-});
-
-// Admin API routes for users CRUD
-Route::middleware(['auth'])->group(function () {
-    Route::post('/admin/users', [UserController::class, 'store'])->name('admin.users.store');
-    Route::put('/admin/users/{user}', [UserController::class, 'update'])->name('admin.users.update');
-    Route::patch('/admin/users/{user}/toggle', [UserController::class, 'toggle'])->name('admin.users.toggle');
-    Route::post('/admin/users/{user}/generate-qr-token', [UserController::class, 'generateQrToken'])->name('admin.users.generate-qr');
-    Route::post('/admin/users/{user}/revoke-qr-token', [UserController::class, 'revokeQrToken'])->name('admin.users.revoke-qr-token');
-    Route::post('/admin/users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('admin.users.reset-password');
-    Route::delete('/admin/users/{user}', [UserController::class, 'destroy'])->name('admin.users.destroy');
-});
+// ────────────────────────────────────────────────────────────────────────────
+// AUTHENTICATED PAGES (Require login)
+// ────────────────────────────────────────────────────────────────────────────
 
 Route::middleware(['auth'])->group(function () {
-    Route::get('dashboard', function () {
+    Route::get('/dashboard', function () {
         return Inertia::render('dashboard');
     })->name('dashboard');
 });
 
+// ────────────────────────────────────────────────────────────────────────────
+// ADMIN API ROUTES (CRUD operations)
+// ────────────────────────────────────────────────────────────────────────────
+
+Route::middleware(['auth'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+
+        // Tags CRUD
+        Route::post('/tags', [TagController::class, 'store'])->name('tags.store');
+        Route::put('/tags/{tag}', [TagController::class, 'update'])->name('tags.update');
+        Route::patch('/tags/{tag}/toggle', [TagController::class, 'toggle'])->name('tags.toggle');
+        Route::delete('/tags/{tag}', [TagController::class, 'destroy'])->name('tags.destroy');
+
+        // Branches CRUD
+        Route::post('/branches', [BranchController::class, 'store'])->name('branches.store');
+        Route::put('/branches/{branch}', [BranchController::class, 'update'])->name('branches.update');
+        Route::patch('/branches/{branch}/toggle', [BranchController::class, 'toggle'])->name('branches.toggle');
+        Route::delete('/branches/{branch}', [BranchController::class, 'destroy'])->name('branches.destroy');
+
+        // Counters CRUD
+        Route::post('/counters', [CounterController::class, 'store'])->name('counters.store');
+        Route::put('/counters/{counter}', [CounterController::class, 'update'])->name('counters.update');
+        Route::patch('/counters/{counter}/toggle', [CounterController::class, 'toggle'])->name('counters.toggle');
+        Route::patch('/counters/{counter}/force-end-session', [CounterController::class, 'forceEndSession'])->name('counters.force-end-session');
+        Route::delete('/counters/{counter}', [CounterController::class, 'destroy'])->name('counters.destroy');
+
+        // Users CRUD
+        Route::post('/users', [UserController::class, 'store'])->name('users.store');
+        Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
+        Route::patch('/users/{user}/toggle', [UserController::class, 'toggle'])->name('users.toggle');
+        Route::post('/users/{user}/generate-qr-token', [UserController::class, 'generateQrToken'])->name('users.generate-qr');
+        Route::post('/users/{user}/revoke-qr-token', [UserController::class, 'revokeQrToken'])->name('users.revoke-qr-token');
+        Route::post('/users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('users.reset-password');
+        Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+    });
+
+// ────────────────────────────────────────────────────────────────────────────
+// AUTHENTICATION ROUTES
+// ────────────────────────────────────────────────────────────────────────────
+
 require __DIR__ . '/settings.php';
 require __DIR__ . '/auth.php';
-
-
-// <?php
-
-// use App\Http\Controllers\Auth\AuthController;
 // use App\Http\Controllers\Counter\CounterSetupController;
 // use App\Http\Controllers\Counter\CounterFeedbackController;
 // use App\Http\Controllers\Counter\ServicerActivationController;
