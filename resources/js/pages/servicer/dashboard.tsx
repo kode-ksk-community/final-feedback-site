@@ -38,7 +38,9 @@ export default function ServicerDashboard() {
 
     const fetchSession = async () => {
         try {
-            const response = await axios.get('/api/servicer/active-session');
+            const response = await axios.get('/api/servicer/active-session', {
+                withCredentials: true, // Include session cookie with request
+            });
             setSession(response.data.session);
             setLoading(false);
         } catch (error) {
@@ -71,7 +73,9 @@ export default function ServicerDashboard() {
 
         setTerminating(true);
         try {
-            await axios.post(`/api/servicer/terminate-session/${session.id}`);
+            await axios.post(`/api/servicer/terminate-session/${session.id}`, {}, {
+                withCredentials: true, // Include session cookie with request
+            });
             // Redirect to idle screen or home
             window.location.href = '/counter/idle';
         } catch (error) {
