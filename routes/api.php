@@ -51,7 +51,7 @@ Route::middleware('device.token')->prefix('counter')->group(function () {
 // AUTHENTICATED API ROUTES (staff only)
 // ─────────────────────────────────────────────────────────────────────────────
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware('auth:sanctum,web')->group(function () {
     // Feedback analytics and reporting
     Route::get('/feedback/analytics', [FeedbackController::class, 'analytics']);
     Route::get('/feedback/top-tags', [FeedbackController::class, 'topTags']);
@@ -64,7 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Admin dashboard stats endpoint (for dynamic dashboard)
     Route::middleware('role:admin')->get('/admin/stats', [\App\Http\Controllers\AdminDashboardController::class, 'stats']);
 
-    // Servicer Dashboard API Routes
+    // Servicer Dashboard API Routes - allows both session and token auth
     Route::middleware('can:access_servicer_page')->prefix('servicer')->group(function () {
         Route::get('/active-session', [\App\Http\Controllers\ServicerDashboardController::class, 'getActiveSession']);
         Route::post('/terminate-session/{session}', [\App\Http\Controllers\ServicerDashboardController::class, 'terminateSession']);
