@@ -64,8 +64,8 @@ Route::middleware('auth:sanctum,web')->group(function () {
     // Admin dashboard stats endpoint (for dynamic dashboard)
     Route::middleware('role:admin')->get('/admin/stats', [\App\Http\Controllers\AdminDashboardController::class, 'stats']);
 
-    // Servicer Dashboard API Routes - allows both session and token auth
-    Route::middleware('can:access_servicer_page')->prefix('servicer')->group(function () {
+    // Servicer Dashboard API Routes - ensure 'web' middleware so session is started
+    Route::middleware(['web', 'auth:sanctum,web', 'can:access_servicer_page'])->prefix('servicer')->group(function () {
         Route::get('/active-session', [\App\Http\Controllers\ServicerDashboardController::class, 'getActiveSession']);
         Route::post('/terminate-session/{session}', [\App\Http\Controllers\ServicerDashboardController::class, 'terminateSession']);
     });
