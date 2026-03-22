@@ -52,22 +52,27 @@ interface RatingLevel {
 interface ApiError {
     message: string;
     code?: string;
-    details?: any;
+    details?: unknown;
+}
+
+interface ServicerInfo {
+    id: number;
+    name: string;
+    avatar_url?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 4_000;
-const WELCOME_DELAY_MS = 800;
 const THANK_YOU_DURATION = 4;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1000;
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// // ─── Constants ────────────────────────────────────────────────────────────────
 
-const POLL_INTERVAL_MS = 4_000;
-const WELCOME_DELAY_MS = 800;
-const THANK_YOU_DURATION = 4;
+// const POLL_INTERVAL_MS = 4_000;
+// const WELCOME_DELAY_MS = 800;
+// const THANK_YOU_DURATION = 4;
 
 const RATINGS: RatingLevel[] = [
     { value: 1, emoji: "😡", label: "Very Bad", labelKh: "អន់ខ្លាំង", bg: "#fff1f0", accent: "#ef4444", text: "#7f1d1d" },
@@ -77,17 +82,8 @@ const RATINGS: RatingLevel[] = [
     { value: 5, emoji: "😍", label: "Excellent", labelKh: "ល្អណាស់", bg: "#eff6ff", accent: "#3b82f6", text: "#1e3a8a" },
 ];
 
-const MOCK_TAGS: Tag[] = [
-    { id: 1, name: "Friendly Staff", color: "#22c55e", sentiment: "positive" },
-    { id: 2, name: "Helpful", color: "#22c55e", sentiment: "positive" },
-    { id: 3, name: "Fast Service", color: "#3b82f6", sentiment: "positive" },
-    { id: 4, name: "Clean Environment", color: "#06b6d4", sentiment: "positive" },
-    { id: 5, name: "Professional", color: "#8b5cf6", sentiment: "positive" },
-    { id: 6, name: "Slow Service", color: "#f97316", sentiment: "negative" },
-    { id: 7, name: "Long Wait", color: "#f97316", sentiment: "negative" },
-    { id: 8, name: "Rude Staff", color: "#ef4444", sentiment: "negative" },
-    { id: 9, name: "Need Improvement", color: "#6b7280", sentiment: "neutral" },
-];
+// Fallback tags are no longer required because /api/counter/feedback-data returns an up-to-date list from DB.
+// If the API fails we show an empty tag list and prompt users to continue with rating/comment only.
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -137,12 +133,12 @@ function useApiWithRetry() {
         };
     }, []);
 
-    const apiCall = useCallback(async<T>(
+    const apiCall = useCallback(async <T,>(
         apiFunction: () => Promise<T>,
         options: {
             maxRetries?: number;
             retryDelay?: number;
-            onRetry?: (attempt: number, error: any) => void;
+            onRetry?: (attempt: number, error: unknown) => void;
         } = {}
     ): Promise<T> => {
         const { maxRetries = MAX_RETRY_ATTEMPTS, retryDelay = RETRY_DELAY_MS, onRetry } = options;
@@ -154,10 +150,25 @@ function useApiWithRetry() {
                 }
 
                 return await apiFunction();
-            } catch (error: any) {
+            } catch (error: unknown) {
                 const isLastAttempt = attempt === maxRetries;
-                const isNetworkError = !error.response || error.code === 'NETWORK_ERROR';
-                const shouldRetry = !isLastAttempt && (isNetworkError || error.response?.status >= 500);
+                const networkError = (err: unknown): boolean => {
+                    if (!err || typeof err !== 'object') return true;
+                    const e = err as { response?: unknown; code?: string };
+                    if (!e.response || typeof e.response !== 'object') {
+                        return true;
+                    }
+                    const response = e.response as { status?: number };
+                    return !response || e.code === 'NETWORK_ERROR';
+                };
+                const statusCode = (err: unknown): number | null => {
+                    if (!err || typeof err !== 'object') return null;
+                    const e = err as { response?: { status?: number } };
+                    return e.response?.status ?? null;
+                };
+
+                const isNetworkError = networkError(error);
+                const shouldRetry = !isLastAttempt && (isNetworkError || (statusCode(error) ?? 0) >= 500);
 
                 if (shouldRetry) {
                     onRetry?.(attempt, error);
@@ -166,10 +177,13 @@ function useApiWithRetry() {
                 }
 
                 // Transform error for consistent handling
+                const e = (error as { response?: { data?: unknown; status?: number }; message?: string });
                 const apiError: ApiError = {
-                    message: error.response?.data?.message || error.message || 'An unexpected error occurred',
-                    code: error.response?.status?.toString() || 'UNKNOWN',
-                    details: error.response?.data
+                    message: e.response?.data && typeof e.response.data === 'object' && 'message' in e.response.data
+                        ? (e.response.data as { message?: string }).message ?? e.message ?? 'An unexpected error occurred'
+                        : e.message ?? 'An unexpected error occurred',
+                    code: e.response?.status?.toString() ?? 'UNKNOWN',
+                    details: e.response?.data ?? null,
                 };
 
                 throw apiError;
@@ -588,24 +602,33 @@ function FeedbackScreen({ session, onComplete }: FeedbackScreenProps) {
         submitting: false,
     });
 
-    const [tags, setTags] = useState<Tag[]>(MOCK_TAGS);
+    const [tags, setTags] = useState<Tag[]>([]);
+    const [servicer, setServicer] = useState<ServicerInfo | null>(null);
     const [loadingTags, setLoadingTags] = useState(true);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
-    // Load real tags from backend on mount
+    // Load real tags and servicer data from backend on mount
     useEffect(() => {
         const fetchTags = async () => {
             try {
                 const token = localStorage.getItem("counter_device_token");
-                const response = await axios.get<{ servicer: any; tags: Tag[] }>(
+                const response = await axios.get<{ servicer: ServicerInfo; tags: Tag[] }>(
                     "/api/counter/feedback-data",
                     { headers: { "X-Counter-Token": token } }
                 );
-                if (response.data.tags) {
-                    setTags(response.data.tags);
+
+                if (response.data.servicer) {
+                    setServicer(response.data.servicer);
                 }
-            } catch (err) {
-                console.error("Failed to load tags, using mock data:", err);
-                // Fall back to mock tags on error
+
+                if (response.data.tags && response.data.tags.length > 0) {
+                    setTags(response.data.tags);
+                } else {
+                    setTags([]);
+                }
+            } catch (err: unknown) {
+                console.error("Failed to load tags from API:", err);
+                setTags([]);
             } finally {
                 setLoadingTags(false);
             }
@@ -631,10 +654,13 @@ function FeedbackScreen({ session, onComplete }: FeedbackScreenProps) {
     const handleSubmit = async () => {
         if (!state.selectedRating) return;
         setState((s) => ({ ...s, submitting: true }));
+        setSubmitError(null);
+
+        let submissionSuccess = false;
 
         try {
             const token = localStorage.getItem("counter_device_token");
-            await axios.post(
+            const response = await axios.post(
                 "/api/counter/feedback",
                 {
                     rating: state.selectedRating.value,
@@ -643,8 +669,22 @@ function FeedbackScreen({ session, onComplete }: FeedbackScreenProps) {
                 },
                 { headers: { "X-Counter-Token": token } }
             );
-        } catch (err) {
+
+            if (response.status === 201 && response.data.success) {
+                submissionSuccess = true;
+            } else {
+                console.error("Unexpected API response:", response);
+                setSubmitError(response.data.message || "Unable to submit feedback right now.");
+            }
+        } catch (err: unknown) {
             console.error("Feedback submission error:", err);
+            const e = err as { response?: { data?: { error?: string } }; message?: string };
+            setSubmitError(e.response?.data?.error || e.message || "Failed to submit feedback.");
+        }
+
+        if (!submissionSuccess) {
+            setState((s) => ({ ...s, submitting: false }));
+            return;
         }
 
         setState((s) => ({ ...s, submitting: false, step: "done" }));
@@ -700,8 +740,15 @@ function FeedbackScreen({ session, onComplete }: FeedbackScreenProps) {
                             FEEDBACK FOR
                         </p>
                         <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "24px", fontWeight: 700, color: theme.text }}>
-                            {session.servicer_name}
+                            {servicer?.name ?? session.servicer_name}
                         </p>
+                        {servicer?.avatar_url && (
+                            <img
+                                src={servicer.avatar_url}
+                                alt={servicer.name}
+                                style={{ width: 40, height: 40, borderRadius: '50%', marginTop: 8, objectFit: 'cover' }}
+                            />
+                        )}
                     </div>
 
                     {state.step === "detail" && (
@@ -848,6 +895,19 @@ function FeedbackScreen({ session, onComplete }: FeedbackScreenProps) {
                                 />
                             </div>
 
+                            {submitError && (
+                                <div
+                                    style={{
+                                        fontFamily: "'DM Sans', sans-serif",
+                                        fontSize: "13px",
+                                        color: "#ef4444",
+                                        marginBottom: "6px",
+                                    }}
+                                >
+                                    {submitError}
+                                </div>
+                            )}
+
                             <motion.button
                                 onClick={handleSubmit}
                                 disabled={state.submitting}
@@ -952,7 +1012,8 @@ export default function CounterActive() {
                 ),
                 {
                     onRetry: (attempt, error) => {
-                        console.warn(`Session poll retry ${attempt}:`, error.message);
+                        const e = error as { message?: string };
+                        console.warn(`Session poll retry ${attempt}:`, e.message ?? error);
                         setRetryCount(attempt);
                     }
                 }
@@ -971,10 +1032,11 @@ export default function CounterActive() {
                 setActiveSession(null);
                 setPollingPaused(false);
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Session polling failed:', error);
+            const e = error as { code?: string };
 
-            if (error.code === '401') {
+            if (e.code === '401') {
                 // Device token invalid/expired
                 clearDeviceState();
                 router.visit(route("counter.setup"));

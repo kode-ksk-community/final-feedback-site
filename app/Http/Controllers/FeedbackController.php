@@ -6,6 +6,7 @@ use App\Models\Feedback;
 use App\Models\Tag;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -63,8 +64,12 @@ class FeedbackController extends Controller
      */
     public function data(Request $request): JsonResponse
     {
-        // Get servicer from counter session
-        $counter = $request->counter; // Set by DeviceTokenMiddleware
+        // Get counter from middleware attribute; not from request input
+        $counter = $request->attributes->get('counter');
+        if (!$counter instanceof \App\Models\Counter) {
+            return response()->json(['error' => 'Invalid or missing counter token'], 401);
+        }
+
         $session = $counter->activeSession()->with('servicer')->first();
 
         if (!$session) {
@@ -72,6 +77,9 @@ class FeedbackController extends Controller
         }
 
         $servicer = $session->servicer;
+        if (!$servicer) {
+            return response()->json(['error' => 'Active session has no servicer attached'], 500);
+        }
 
         // Get tags for this branch (or global tags)
         $tags = Tag::where(function ($query) use ($counter) {
@@ -100,28 +108,46 @@ class FeedbackController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $counter = $request->counter; // Set by DeviceTokenMiddleware
-        $session = $counter->activeSession()->with('servicer')->first();
-
-        if (!$session) {
-            return response()->json(['error' => 'No active session'], 404);
-        }
-
-        $validated = $request->validate([
-            'rating' => 'required|integer|min:1|max:5',
-            'tag_ids' => 'nullable|array',
-            'tag_ids.*' => 'integer|exists:tags,id',
-            'comment' => 'nullable|string|max:1000',
-        ]);
-
         try {
+            $counter = $request->attributes->get('counter');
+            if (!$counter instanceof \App\Models\Counter) {
+                \Log::warning('Invalid or missing counter in feedback store', [
+                    'counter' => $counter,
+                    'type' => gettype($counter),
+                ]);
+                return response()->json(['error' => 'Invalid or missing counter token'], 401);
+            }
+
+            $session = $counter->activeSession()->with('servicer')->first();
+            if (!$session) {
+                \Log::warning('No active session for counter in feedback store', [
+                    'counter_id' => $counter->id,
+                ]);
+                return response()->json(['error' => 'No active session'], 404);
+            }
+
+            if (!$session->servicer) {
+                \Log::warning('Active session has no servicer in feedback store', [
+                    'session_id' => $session->id,
+                    'servicer_id' => $session->servicer_id,
+                ]);
+                return response()->json(['error' => 'Active session has no servicer attached'], 500);
+            }
+
+            $validated = $request->validate([
+                'rating' => 'required|integer|min:1|max:5',
+                'tag_ids' => 'nullable|array',
+                'tag_ids.*' => 'integer|exists:tags,id',
+                'comment' => 'nullable|string|max:1000',
+            ]);
+
             $feedback = Feedback::create([
                 'counter_id' => $counter->id,
                 'counter_session_id' => $session->id,
-                'servicer_id' => $session->servicer_id,
+                'servicer_id' => $session->servicer->id,
                 'branch_id' => $counter->branch_id,
                 'rating' => $validated['rating'],
-                'comment' => $validated['comment'],
+                'comment' => $validated['comment'] ?? null,
                 'submitted_ip' => $request->ip(),
                 'sentiment_score' => $this->calculateSentimentScore(
                     $validated['rating'],
@@ -143,8 +169,15 @@ class FeedbackController extends Controller
                 'message' => 'Thank you for your feedback!',
                 'feedback_id' => $feedback->id,
             ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::warning('Validation error in feedback store', $e->errors());
+            throw $e; // Re-throw to let Laravel handle it
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to submit feedback'], 500);
+            \Log::error('Exception in feedback store', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json(['error' => 'Failed to submit feedback: ' . $e->getMessage()], 500);
         }
     }
 
