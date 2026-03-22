@@ -82,6 +82,7 @@ Route::middleware(['auth'])->group(function () {
 // ────────────────────────────────────────────────────────────────────────────
 
 use App\Http\Controllers\ServicerDashboardController;
+use Illuminate\Support\Facades\Artisan;
 
 Route::middleware(['auth', 'can:access_servicer_page'])
     ->get('/servicer/dashboard', [ServicerDashboardController::class, 'index'])
@@ -126,6 +127,20 @@ Route::get('/clear-cache', function () {
     Artisan::call('cache:clear');
     Artisan::call('view:clear');
     return 'All cleared at ' . now();
+});
+
+Route::get('/csrf-check', function () {
+    return response()->json([
+        'csrf_token'        => csrf_token(),
+        'session_id'        => session()->getId(),
+        'session_driver'    => config('session.driver'),
+        'session_domain'    => config('session.domain'),
+        'session_secure'    => config('session.secure'),
+        'app_url'           => config('app.url'),
+        'request_cookies'   => request()->cookies->all(),
+        'xsrf_cookie'       => request()->cookie('XSRF-TOKEN'),
+        'session_cookie'    => request()->cookie('laravel_session'),
+    ]);
 });
 
 
