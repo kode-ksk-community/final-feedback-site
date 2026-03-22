@@ -11,7 +11,7 @@ import axios from 'axios';
 interface ActiveSession {
     id: number;
     counter_id: number;
-    servicer_id: number;
+    user_id: number;
     started_at: string;
     ended_at: string | null;
     counter: {

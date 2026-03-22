@@ -17,8 +17,8 @@ class ServicerDashboardController extends Controller
     {
         $user = auth()->user();
 
-        // Get the active counter session for this servicer
-        $activeSession = CounterSession::where('servicer_id', $user->id)
+        // Get the active counter session for this servicer (user_id, not servicer_id)
+        $activeSession = CounterSession::where('user_id', $user->id)
             ->whereNull('ended_at')
             ->with(['counter.branch'])
             ->first();
@@ -41,7 +41,7 @@ class ServicerDashboardController extends Controller
         $session = CounterSession::findOrFail($sessionId);
 
         // Verify the session belongs to this servicer
-        if ($session->servicer_id !== $user->id) {
+        if ($session->user_id !== $user->id) {
             return response()->json([
                 'message' => 'Unauthorized',
             ], 403);
@@ -50,6 +50,7 @@ class ServicerDashboardController extends Controller
         // Mark session as ended
         $session->update([
             'ended_at' => now(),
+            'end_reason' => 'logout',
         ]);
 
         // Update counter status to idle
