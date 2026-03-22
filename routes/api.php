@@ -60,6 +60,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/feedback/trends', [FeedbackController::class, 'trends']);
     Route::get('/feedback', [FeedbackController::class, 'index']);
     Route::delete('/feedback/{feedback}', [FeedbackController::class, 'destroy']);
+
+    // Admin dashboard stats endpoint (for dynamic dashboard)
+    Route::middleware('role:admin')->get('/admin/stats', [\App\Http\Controllers\AdminDashboardController::class, 'stats']);
+
+    // Servicer Dashboard API Routes
+    Route::middleware('can:access_servicer_page')->prefix('servicer')->group(function () {
+        Route::get('/active-session', [\App\Http\Controllers\ServicerDashboardController::class, 'getActiveSession']);
+        Route::post('/terminate-session/{session}', [\App\Http\Controllers\ServicerDashboardController::class, 'terminateSession']);
+    });
 });
 //  *   counter:  { id, name, branch_name, branch_id }
 //  * }

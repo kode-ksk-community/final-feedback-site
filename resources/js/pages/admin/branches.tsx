@@ -22,6 +22,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { router } from "@inertiajs/react";
 import toast, { Toaster } from "react-hot-toast";
 import AdminLayout from "../Layouts/AdminLayout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -145,25 +150,14 @@ function BranchDrawer({ branch, onClose }: DrawerProps) {
             { key: "address", label: "Address", placeholder: "Full address", type: "text" },
             { key: "phone", label: "Phone", placeholder: "+855 23 000 000", type: "text" },
           ].map(f => (
-            <div key={f.key}>
-              <label style={{
-                fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-                fontWeight: 600, color: "#374151", display: "block", marginBottom: "7px"
-              }}>
-                {f.label}
-              </label>
-              <input type={f.type}
+            <div key={f.key} className="space-y-1">
+              <Label htmlFor={`branch-${f.key}`} className="text-sm text-slate-700">{f.label}</Label>
+              <Input
+                id={`branch-${f.key}`}
+                type={f.type}
                 value={(form as any)[f.key]}
                 onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
                 placeholder={f.placeholder}
-                style={{
-                  width: "100%", padding: "11px 14px", borderRadius: 12,
-                  border: "1.5px solid #e2e8f0", background: "#fafbfc",
-                  fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                  color: "#0f172a", outline: "none", transition: "border-color .2s"
-                }}
-                onFocus={e => (e.target.style.borderColor = "#0f172a")}
-                onBlur={e => (e.target.style.borderColor = "#e2e8f0")}
               />
             </div>
           ))}
@@ -198,33 +192,11 @@ function BranchDrawer({ branch, onClose }: DrawerProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-7 py-5 flex gap-3"
-          style={{ borderTop: "1px solid #f1f5f9" }}>
-          <button onClick={onClose}
-            style={{
-              flex: 1, padding: "11px", borderRadius: 12,
-              border: "1.5px solid #e2e8f0", background: "transparent",
-              fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-              fontWeight: 600, color: "#64748b", cursor: "pointer"
-            }}>
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving}
-            style={{
-              flex: 2, padding: "11px", borderRadius: 12,
-              border: "none", background: saving ? "#d1d5db" : "#0f172a",
-              fontFamily: "'Syne', sans-serif", fontSize: "13px",
-              fontWeight: 700, color: "#ffffff", cursor: saving ? "not-allowed" : "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8
-            }}>
-            {saving
-              ? <><div style={{
-                width: 14, height: 14, borderRadius: "50%",
-                border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff",
-                animation: "spin .7s linear infinite"
-              }} /> Saving...</>
-              : isEdit ? "Save Changes" : "Create Branch"}
-          </button>
+        <div className="px-7 py-5 flex gap-3 border-t border-slate-200">
+          <Button onClick={onClose} variant="outline" className="flex-1">Cancel</Button>
+          <Button onClick={handleSave} disabled={saving} className="flex-1">
+            {saving ? "Saving..." : isEdit ? "Update" : "Create"}
+          </Button>
         </div>
       </motion.div>
     </>

@@ -22,10 +22,18 @@
  *   Search "TODO: REPLACE" for every backend swap point.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import axios from "axios";
 import toast, { Toaster } from "react-hot-toast";
 import AdminLayout from "../Layouts/Adminlayout";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardDescription, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +61,22 @@ interface TagStat {
 }
 
 type TimeRange = "today" | "week" | "month" | "year";
+
+interface AdminStats {
+    range: TimeRange;
+    total: number;
+    avg: number;
+    growth: number | null;
+    ratingDist: number[];
+    servicers: Servicer[];
+    tags: TagStat[];
+    feed: FeedbackItem[];
+}
+
+interface Props {
+    stats: AdminStats;
+    initialRange: TimeRange;
+}
 
 // ─── Rating config ────────────────────────────────────────────────────────────
 
@@ -171,38 +195,24 @@ function MetricCard({ label, value, sub, accent, icon, index }: {
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.08, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className="rounded-2xl p-5 relative overflow-hidden"
-            style={{
-                background: "#ffffff", border: "1px solid #f1f5f9",
-                boxShadow: "0 1px 8px rgba(0,0,0,0.04)"
-            }}
-        >
-            <div className="flex items-start justify-between mb-3">
-                <span style={{
-                    fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-                    color: "#94a3b8", fontWeight: 500, letterSpacing: "0.01em"
-                }}>
-                    {label}
-                </span>
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center text-base"
-                    style={{ background: `${accent}15` }}>
-                    {icon}
-                </div>
-            </div>
-            <p style={{
-                fontFamily: "'Syne', sans-serif", fontSize: "28px",
-                fontWeight: 800, color: "#0f172a", letterSpacing: "-0.03em",
-                marginBottom: "4px", lineHeight: 1
-            }}>
-                {value}
-            </p>
-            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: "#94a3b8" }}>
-                {sub}
-            </p>
-            {/* Accent bottom line */}
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-b-2xl"
-                style={{ background: `linear-gradient(90deg, ${accent}, transparent)` }} />
+            transition={{ delay: index * 0.08, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+            <Card className="shadow-sm border">
+                <CardHeader className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                        <div>
+                            <CardTitle className="text-base font-semibold text-muted-foreground">{label}</CardTitle>
+                        </div>
+                        <span className="w-8 h-8 rounded-xl flex items-center justify-center text-base"
+                            style={{ background: `${accent}15` }}>
+                            {icon}
+                        </span>
+                    </div>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 pt-0">
+                    <p className="text-2xl font-extrabold text-foreground">{value}</p>
+                    <CardDescription>{sub}</CardDescription>
+                </CardContent>
+            </Card>
         </motion.div>
     );
 }
@@ -330,13 +340,9 @@ function FeedItem({ item, index }: { item: FeedbackItem; index: number }) {
                 {item.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                         {item.tags.map(t => (
-                            <span key={t} className="px-2 py-0.5 rounded-full text-xs"
-                                style={{
-                                    background: `${r.color}15`, color: r.color,
-                                    fontFamily: "'DM Sans', sans-serif", fontSize: "11px"
-                                }}>
+                            <Badge key={t} variant={r.value >= 4 ? "secondary" : "outline"} className="px-2 py-0.5 text-xs">
                                 {t}
-                            </span>
+                            </Badge>
                         ))}
                     </div>
                 )}
@@ -347,22 +353,46 @@ function FeedItem({ item, index }: { item: FeedbackItem; index: number }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function ManagerDashboard() {
-    const [range, setRange] = useState<TimeRange>("today");
+export default function ManagerDashboard({ stats, initialRange }: Props) {
+    const [range, setRange] = useState<TimeRange>(initialRange || "today");
     const [activeTab, setActiveTab] = useState<"overview" | "servicers" | "feedback">("overview");
+    const [currentStats, setCurrentStats] = useState<AdminStats>(stats);
 
     // TODO: REPLACE — from Inertia props: { manager, branch }
     const managerName = "Main Branch Manager";
     const branchName = "Main Branch";
 
-    const data = MOCK[range];
+    const data = currentStats;
 
     // Rating distribution — max for bar scaling
-    const maxDist = Math.max(...data.ratingDist);
+    const maxDist = useMemo(() => Math.max(...data.ratingDist), [data.ratingDist]);
 
     const rangeLabels: Record<TimeRange, string> = {
         today: "Today", week: "This Week", month: "This Month", year: "This Year",
     };
+
+    const [isLoading, setIsLoading] = useState(false);
+
+    const fetchStats = async (targetRange: TimeRange) => {
+        try {
+            setIsLoading(true);
+            const response = await axios.get(`/api/admin/stats`, { params: { range: targetRange } });
+            if (response.data) {
+                setCurrentStats(response.data);
+            }
+        } catch (error) {
+            console.error("Failed to load dashboard stats:", error);
+            toast.error("Could not update dashboard data. Please try again.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (range !== initialRange) {
+            fetchStats(range);
+        }
+    }, [range]);
 
     const handleExport = (fmt: string) => {
         // TODO: REPLACE with: window.location.href = route('manager.export', { format: fmt, range })
@@ -372,7 +402,7 @@ export default function ManagerDashboard() {
     // ─── Render ───────────────────────────────────────────────────────────────
 
     return (
-        <AdminLayout title="Counters" active="counters">
+        <AdminLayout title="Admin Dashboard" active="dashboard">
             <Toaster position="top-right" toastOptions={{
                 style: { fontFamily: "'DM Sans', sans-serif", borderRadius: "12px", fontSize: "13px" },
             }} />
@@ -398,54 +428,54 @@ export default function ManagerDashboard() {
                     {/* Export */}
                     <div className="flex items-center gap-2">
                         {["PDF", "Excel", "CSV"].map(fmt => (
-                            <button key={fmt} onClick={() => handleExport(fmt)}
-                                className="px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                                style={{
-                                    fontFamily: "'DM Mono', monospace",
-                                    background: "#ffffff", color: "#64748b",
-                                    border: "1px solid #e2e8f0", cursor: "pointer"
-                                }}
-                                onMouseEnter={e => (e.currentTarget.style.borderColor = "#94a3b8")}
-                                onMouseLeave={e => (e.currentTarget.style.borderColor = "#e2e8f0")}>
+                            <Button key={fmt} variant="outline" size="sm" onClick={() => handleExport(fmt)}>
                                 ↓ {fmt}
-                            </button>
+                            </Button>
                         ))}
                     </div>
                 </motion.div>
 
-                {/* Time range filter */}
+                {/* Time range + search */}
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                     transition={{ delay: 0.1 }}
-                    className="flex items-center gap-1 p-1 rounded-2xl mb-8 w-fit"
-                    style={{ background: "#ffffff", border: "1px solid #f1f5f9" }}>
-                    {(["today", "week", "month", "year"] as TimeRange[]).map(r => (
-                        <button key={r} onClick={() => setRange(r)}
-                            className="px-5 py-2 rounded-xl text-sm font-medium transition-all"
-                            style={{
-                                fontFamily: "'DM Sans', sans-serif",
-                                background: range === r ? "#0f172a" : "transparent",
-                                color: range === r ? "#ffffff" : "#64748b",
-                                border: "none", cursor: "pointer", fontSize: "13px",
-                            }}>
-                            {rangeLabels[r]}
-                        </button>
-                    ))}
+                    className="flex flex-wrap items-center gap-4 mb-8">
+
+                    <div className="flex items-center gap-2">
+                        <Label htmlFor="dashboard-range" className="text-sm">Time range</Label>
+                        <Select value={range} onValueChange={(value: string) => setRange(value as TimeRange)}>
+                            <SelectTrigger id="dashboard-range" className="w-40">
+                                <SelectValue placeholder="Select range" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="today">Today</SelectItem>
+                                <SelectItem value="week">This Week</SelectItem>
+                                <SelectItem value="month">This Month</SelectItem>
+                                <SelectItem value="year">This Year</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <Label htmlFor="dashboard-search" className="text-sm">Search</Label>
+                        <Input id="dashboard-search" placeholder="Search feedback" className="w-64" />
+                    </div>
+
                 </motion.div>
 
                 {/* ── Metric cards ── */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                     <MetricCard index={0} icon="💬" accent="#3b82f6" label="Total Feedback"
                         value={data.total.toLocaleString()}
-                        sub={`+${data.growth}% vs last period`} />
+                        sub={data.growth !== null ? `+${data.growth}% vs last period` : "No previous period"} />
                     <MetricCard index={1} icon="⭐" accent="#f59e0b" label="Average Rating"
                         value={data.avg.toFixed(1)}
                         sub="Out of 5.0" />
                     <MetricCard index={2} icon="🏆" accent="#22c55e" label="Top Servicer"
-                        value={data.servicers[0].name.split(" ")[0]}
-                        sub={`${data.servicers[0].avg.toFixed(1)} avg · ${data.servicers[0].total} feedback`} />
+                        value={data.servicers[0]?.name?.split(" ")[0] ?? "-"}
+                        sub={data.servicers[0] ? `${data.servicers[0].avg.toFixed(1)} avg · ${data.servicers[0].total} feedback` : "No data"} />
                     <MetricCard index={3} icon="📉" accent="#ef4444" label="Needs Attention"
-                        value={data.servicers[data.servicers.length - 1].name.split(" ")[0]}
-                        sub={`${data.servicers[data.servicers.length - 1].avg.toFixed(1)} avg rating`} />
+                        value={data.servicers[data.servicers.length - 1]?.name?.split(" ")[0] ?? "-"}
+                        sub={data.servicers.length > 0 ? `${data.servicers[data.servicers.length - 1].avg.toFixed(1)} avg rating` : "No data"} />
                 </div>
 
                 {/* ── Main grid ── */}

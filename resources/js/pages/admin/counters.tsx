@@ -23,6 +23,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { router } from "@inertiajs/react";
 import toast, { Toaster } from "react-hot-toast";
 import AdminLayout from "../Layouts/AdminLayout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -146,25 +151,18 @@ function CounterDrawer({ counter, branches, onClose }: {
         <div className="flex-1 overflow-y-auto px-7 py-6 flex flex-col gap-5">
 
           {/* Branch selector */}
-          <div>
-            <label style={{
-              fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-              fontWeight: 600, color: "#374151", display: "block", marginBottom: "7px"
-            }}>
-              Branch *
-            </label>
-            <select value={form.branch_id}
-              onChange={e => setForm(p => ({ ...p, branch_id: Number(e.target.value) }))}
-              style={{
-                width: "100%", padding: "11px 14px", borderRadius: 12,
-                border: "1.5px solid #e2e8f0", background: "#fafbfc",
-                fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                color: "#0f172a", outline: "none", cursor: "pointer"
-              }}>
-              {branches.map(b => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
+          <div className="space-y-1">
+            <Label htmlFor="counter-branch" className="text-sm">Branch *</Label>
+            <Select value={String(form.branch_id)} onValueChange={value => setForm(p => ({ ...p, branch_id: Number(value) }))}>
+              <SelectTrigger id="counter-branch" className="w-full">
+                <SelectValue placeholder="Select branch" />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map(b => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Name + Description */}
@@ -172,24 +170,13 @@ function CounterDrawer({ counter, branches, onClose }: {
             { key: "name", label: "Counter Name *", placeholder: "e.g. Counter 1" },
             { key: "description", label: "Description", placeholder: "e.g. Ground floor, near entrance" },
           ].map(f => (
-            <div key={f.key}>
-              <label style={{
-                fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-                fontWeight: 600, color: "#374151", display: "block", marginBottom: "7px"
-              }}>
-                {f.label}
-              </label>
-              <input value={(form as any)[f.key]}
+            <div key={f.key} className="space-y-1">
+              <Label htmlFor={`counter-${f.key}`} className="text-sm">{f.label}</Label>
+              <Input
+                id={`counter-${f.key}`}
+                value={(form as any)[f.key]}
                 onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
                 placeholder={f.placeholder}
-                style={{
-                  width: "100%", padding: "11px 14px", borderRadius: 12,
-                  border: "1.5px solid #e2e8f0", background: "#fafbfc",
-                  fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-                  color: "#0f172a", outline: "none", transition: "border-color .2s"
-                }}
-                onFocus={e => (e.target.style.borderColor = "#0f172a")}
-                onBlur={e => (e.target.style.borderColor = "#e2e8f0")}
               />
             </div>
           ))}
@@ -203,38 +190,19 @@ function CounterDrawer({ counter, branches, onClose }: {
               {isEdit ? "New PIN (leave blank to keep current)" : "Counter PIN *"}
             </label>
             <div className="flex gap-2">
-              <input type={showPin ? "text" : "password"}
+              <Input
+                type={showPin ? "text" : "password"}
                 value={form.pin}
                 onChange={e => setForm(p => ({ ...p, pin: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
                 placeholder="4–6 digit PIN"
                 maxLength={6}
-                style={{
-                  flex: 1, padding: "11px 14px", borderRadius: 12,
-                  border: "1.5px solid #e2e8f0", background: "#fafbfc",
-                  fontFamily: "'DM Mono', monospace", fontSize: "16px",
-                  letterSpacing: "0.2em", color: "#0f172a", outline: "none"
-                }}
-                onFocus={e => (e.target.style.borderColor = "#0f172a")}
-                onBlur={e => (e.target.style.borderColor = "#e2e8f0")}
+                className="flex-1 font-mono text-lg tracking-widest"
               />
-              <button onClick={() => setShowPin(p => !p)}
-                style={{
-                  padding: "0 14px", borderRadius: 12, border: "1.5px solid #e2e8f0",
-                  background: "#fafbfc", cursor: "pointer", fontSize: "16px"
-                }}>
+              <Button variant="outline" size="sm" onClick={() => setShowPin(p => !p)}>
                 {showPin ? "🙈" : "👁"}
-              </button>
-              <button onClick={generatePin}
-                style={{
-                  padding: "0 14px", borderRadius: 12, border: "none",
-                  background: "#0f172a", color: "#fff",
-                  fontFamily: "'DM Mono', monospace", fontSize: "11px",
-                  cursor: "pointer", whiteSpace: "nowrap"
-                }}>
-                Generate
-              </button>
-            </div>
-            <p style={{
+              </Button>
+              <Button variant="default" size="sm" onClick={generatePin}>Generate</Button>
+            </div>            <p style={{
               fontFamily: "'DM Sans', sans-serif", fontSize: "11px",
               color: "#94a3b8", marginTop: 6
             }}>
@@ -269,31 +237,16 @@ function CounterDrawer({ counter, branches, onClose }: {
           </div>
         </div>
 
-        <div className="px-7 py-5 flex gap-3" style={{ borderTop: "1px solid #f1f5f9" }}>
-          <button onClick={onClose}
-            style={{
-              flex: 1, padding: "11px", borderRadius: 12,
-              border: "1.5px solid #e2e8f0", background: "transparent",
-              fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
-              fontWeight: 600, color: "#64748b", cursor: "pointer"
-            }}>
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving}
-            style={{
-              flex: 2, padding: "11px", borderRadius: 12, border: "none",
-              background: saving ? "#d1d5db" : "#0f172a",
-              fontFamily: "'Syne', sans-serif", fontSize: "13px", fontWeight: 700,
-              color: "#ffffff", cursor: saving ? "not-allowed" : "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8
-            }}>
-            {saving
-              ? <><div style={{
-                width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,.4)",
-                borderTopColor: "#fff", animation: "spin .7s linear infinite"
-              }} /> Saving...</>
-              : isEdit ? "Save Changes" : "Create Counter"}
-          </button>
+        <div className="px-7 py-5 flex gap-3 border-t border-slate-200">
+          <Button onClick={onClose} variant="outline" className="flex-1">Cancel</Button>
+          <Button onClick={handleSave} disabled={saving} className="flex-2">
+            {saving ? (
+              <>
+                <span className="h-3 w-3 rounded-full border border-white border-t-white/40 animate-spin" />
+                Saving...
+              </>
+            ) : isEdit ? "Save Changes" : "Create Counter"}
+          </Button>
         </div>
       </motion.div>
     </>

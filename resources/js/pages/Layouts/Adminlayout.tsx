@@ -14,11 +14,13 @@
 
 import { useState, ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Link } from "@inertiajs/react";
 
 interface Props {
   children: ReactNode;
   title: string;
-  active: "dashboard" | "branches" | "counters" | "users" | "tags" | "settings";
+  active: "dashboard" | "branches" | "counters" | "users" | "tags" | "settings" | "feedback";
+  actions?: ReactNode;
 }
 
 // TODO: REPLACE — from Inertia shared props (HandleInertiaRequests middleware)
@@ -30,10 +32,11 @@ const NAV = [
   { key: "counters",  icon: "🖥️", label: "Counters",   href: "/admin/counters"   },
   { key: "users",     icon: "👥", label: "Users",      href: "/admin/users"      },
   { key: "tags",      icon: "🏷️", label: "Tags",       href: "/admin/tags"       },
+  { key: "feedback",  icon: "💬", label: "Feedback",   href: "/admin/feedback"   },
   { key: "settings",  icon: "⚙️", label: "Settings",   href: "/admin/settings"   },
 ];
 
-export default function AdminLayout({ children, title, active }: Props) {
+export default function AdminLayout({ children, title, active, actions }: Props) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -78,7 +81,7 @@ export default function AdminLayout({ children, title, active }: Props) {
               const isActive = item.key === active;
               return (
                 // TODO: REPLACE anchor with Inertia <Link href={item.href}>
-                <a key={item.key} href={item.href}
+                <Link key={item.key} href={item.href}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all no-underline"
                   style={{
                     background: isActive ? "rgba(255,255,255,0.1)" : "transparent",
@@ -101,7 +104,7 @@ export default function AdminLayout({ children, title, active }: Props) {
                       className="ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0"
                       style={{ background: "#38bdf8" }} />
                   )}
-                </a>
+                </Link>
               );
             })}
           </nav>
@@ -137,11 +140,16 @@ export default function AdminLayout({ children, title, active }: Props) {
           {/* Top header bar */}
           <header className="sticky top-0 z-10 flex items-center justify-between px-8 py-4"
             style={{ background: "#ffffff", borderBottom: "1px solid #e2e8f0" }}>
-            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "18px",
-              fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
-              {title}
-            </h1>
-            <div className="flex items-center gap-2">
+            <div>
+              <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "18px",
+                fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
+                {title}
+              </h1>
+              <p className="text-xs text-gray-500 mt-1">Admin control panel with live filtering, actions, and search.</p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {actions}
               <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "11px",
                 color: "#94a3b8", letterSpacing: "0.04em" }}>
                 {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}

@@ -163,7 +163,26 @@ export default function AdminFeedback({ feedbacks }: Props) {
   };
 
   return (
-    <AdminLayout>
+    <AdminLayout
+      title="Customer Feedback"
+      active="feedback"
+      actions={
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleExport("csv")}
+            className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+          >
+            Export CSV
+          </button>
+          <button
+            onClick={() => handleExport("json")}
+            className="rounded-lg border border-blue-600 px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+          >
+            Export JSON
+          </button>
+        </div>
+      }
+    >
       <Toaster position="top-right" />
 
       <div className="space-y-6 p-6">
