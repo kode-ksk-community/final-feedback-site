@@ -19,3 +19,6 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 </IfModule>
+
+# PHP Version (uncomment and modify if needed for cPanel)
+# AddHandler application/x-httpd-php82 .php
