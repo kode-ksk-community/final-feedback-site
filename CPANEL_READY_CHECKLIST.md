@@ -7,10 +7,10 @@ Your Laravel application is now fully prepared for cPanel deployment. Use this c
 - [ ] Review all modified files: `.env.example`, `config/session.php`, `public/.htaccess`, `.env.example`
 - [ ] Verify `.env` file is NOT committed (should be in .gitignore)
 - [ ] Check cPanel-specific documentation files are included:
-  - [ ] `CPANEL_DEPLOYMENT_GUIDE.md`
-  - [ ] `419_ERROR_FIX.md`
-  - [ ] `419_FIX_SUMMARY.md`
-  - [ ] `CPANEL_READY_CHECKLIST.md` (this file)
+    - [ ] `CPANEL_DEPLOYMENT_GUIDE.md`
+    - [ ] `419_ERROR_FIX.md`
+    - [ ] `419_FIX_SUMMARY.md`
+    - [ ] `CPANEL_READY_CHECKLIST.md` (this file)
 
 ### Git Commands to Run
 
@@ -219,11 +219,13 @@ curl -I https://yourdomain.com
 ## ✅ HTTPS Redirect (cPanel AutoRedirect)
 
 In cPanel control panel:
+
 1. Domain Manager → Your Domain → Manage
 2. Find "Force HTTPS Redirect" option
 3. Enable it (should auto-redirect http:// to https://)
 
 Or in `.htaccess` it's already configured:
+
 ```apache
 RewriteEngine On
 # This in public/.htaccess ensures all traffic goes to index.php
@@ -236,18 +238,21 @@ RewriteEngine On
 After deployment, test these flows:
 
 ### Test 1: Access Homepage
+
 ```
 https://yourdomain.com
 Should load without errors, no 500 error
 ```
 
 ### Test 2: Access Login Page
+
 ```
 https://yourdomain.com/login
 Should load login form (no 419 error)
 ```
 
 ### Test 3: Test Login
+
 ```
 1. Enter valid email/password
 2. Click login
@@ -255,6 +260,7 @@ Should load login form (no 419 error)
 ```
 
 ### Test 4: Check Session
+
 ```
 After login:
 1. Open DevTools (F12) → Network tab
@@ -263,6 +269,7 @@ After login:
 ```
 
 ### Test 5: Check Logs
+
 ```bash
 # If anything fails, check logs:
 tail -f storage/logs/laravel.log
@@ -299,13 +306,13 @@ See `419_ERROR_FIX.md` for complete debugging guide.
 
 ## ✅ Key Files Modified
 
-| File | Changes | Status |
-|------|---------|--------|
-| `.env.example` | Added SESSION_SECURE_COOKIE, SESSION_HTTP_ONLY, SESSION_SAME_SITE | ✅ |
-| `config/session.php` | Enhanced HTTPS detection for cPanel reverse proxies | ✅ |
-| `public/.htaccess` | Added PHP version directive for cPanel | ✅ |
-| `bootstrap/app.php` | Added trustProxies(*) for HTTPS detection | ✅ |
-| `.env` | Configured for production MySQL + sessions | ✅ |
+| File                 | Changes                                                           | Status |
+| -------------------- | ----------------------------------------------------------------- | ------ |
+| `.env.example`       | Added SESSION_SECURE_COOKIE, SESSION_HTTP_ONLY, SESSION_SAME_SITE | ✅     |
+| `config/session.php` | Enhanced HTTPS detection for cPanel reverse proxies               | ✅     |
+| `public/.htaccess`   | Added PHP version directive for cPanel                            | ✅     |
+| `bootstrap/app.php`  | Added trustProxies(\*) for HTTPS detection                        | ✅     |
+| `.env`               | Configured for production MySQL + sessions                        | ✅     |
 
 ---
 
@@ -401,9 +408,9 @@ tail -f storage/logs/laravel.log
 
 **Last Updated**: March 23, 2026
 
-**Next Steps**: 
+**Next Steps**:
+
 1. Review this checklist
 2. Commit and push to git
 3. Follow steps to deploy to cPanel
 4. Monitor logs after going live
-
