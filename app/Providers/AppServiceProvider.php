@@ -22,11 +22,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Force HTTPS scheme for production (needed behind cPanel reverse proxy)
-        // if (config('app.env') === 'production') {
-        //     URL::forceScheme('https');
-        // }
-
         Gate::define('access_branch_manager_page', function (User $user) {
             return in_array($user->role, ['super_admin', 'admin', 'branch_manager']);
         });

@@ -167,20 +167,9 @@ return [
     | to the server if the browser has a HTTPS connection. This will keep
     | the cookie from being sent to you when it can't be done securely.
     |
-    | For cPanel hosting behind a reverse proxy, we need to explicitly detect
-    | HTTPS from the headers set by the proxy.
-    |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE', (function () {
-        // For cPanel/shared hosting: check multiple HTTPS indicators
-        if (env('APP_ENV') === 'production') {
-            return isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ||
-                isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https' ||
-                isset($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on';
-        }
-        return false;
-    })()),
+    'secure' => env('SESSION_SECURE_COOKIE'),
 
     /*
     |--------------------------------------------------------------------------

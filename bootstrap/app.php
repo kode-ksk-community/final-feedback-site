@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Middleware\HandleInertiaRequests;
-use App\Http\Middleware\DeviceTokenMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,18 +14,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Trust all proxies — required for cPanel/shared hosting behind reverse proxy
-        // This fixes HTTPS detection so secure cookies work correctly
-        $middleware->trustProxies(at: '*');
-
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
-        ]);
-
-        // Register device.token middleware alias
-        $middleware->alias([
-            'device.token' => DeviceTokenMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
