@@ -112,7 +112,7 @@ function StepIndicator({ current }: { current: number }) {
   const steps = ["Branch", "Counter", "PIN"];
   return (
     <div className="flex items-center gap-3 mb-10 justify-center">
-      {steps.map((label, i) => {
+      {steps?.map((label, i) => {
         const step     = i + 1;
         const isActive = step === current;
         const isDone   = step < current;
@@ -148,7 +148,7 @@ function StepIndicator({ current }: { current: number }) {
                 {label}
               </span>
             </div>
-            {i < steps.length - 1 && (
+            {i < steps?.length - 1 && (
               <motion.div className="w-14 h-px mb-5"
                 animate={{ backgroundColor: isDone ? "#10b981" : "rgba(248,250,252,0.12)" }}
                 transition={{ duration: 0.4 }}
@@ -223,19 +223,19 @@ function PinKeypad({ pin, onChange, disabled }: {
   const handleKey = (key: string) => {
     if (disabled) return;
     if (key === "del") onChange(pin.slice(0, -1));
-    else if (pin.length < 6) onChange(pin + key);
+    else if (pin?.length < 6) onChange(pin + key);
   };
 
   return (
     <div className="flex flex-col items-center gap-7">
       {/* Dots */}
       <div className="flex gap-4">
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: 6 })?.map((_, i) => (
           <motion.div
             key={i}
             animate={{
-              scale:           i === pin.length - 1 ? [1, 1.35, 1] : 1,
-              backgroundColor: i < pin.length ? "#f8fafc" : "rgba(248,250,252,0.15)",
+              scale:           i === pin?.length - 1 ? [1, 1.35, 1] : 1,
+              backgroundColor: i < pin?.length ? "#f8fafc" : "rgba(248,250,252,0.15)",
             }}
             transition={{ duration: 0.15 }}
             className="w-3.5 h-3.5 rounded-full"
@@ -245,7 +245,7 @@ function PinKeypad({ pin, onChange, disabled }: {
 
       {/* Keys */}
       <div className="grid grid-cols-3 gap-3 w-full max-w-[260px]">
-        {keys.map((key, i) => {
+        {keys?.map((key, i) => {
           if (key === "") return <div key={i} />;
           return (
             <motion.button
@@ -339,7 +339,7 @@ export default function CounterSetup({ branches }: Props) {
 
   const handlePinSubmit = useCallback(async () => {
     if (!selectedCounter) return;
-    if (pin.length < 4) {
+    if (pin?.length < 4) {
       toast.error("Please enter your PIN");
       return;
     }
@@ -415,7 +415,7 @@ export default function CounterSetup({ branches }: Props) {
   // Auto-submit when PIN reaches 6 digits
   const handlePinChange = useCallback((newPin: string) => {
     setPin(newPin);
-    if (newPin.length === 6) {
+    if (newPin?.length === 6) {
       // Small delay so user sees all 6 dots filled before submitting
       setTimeout(() => handlePinSubmit(), 300);
     }
@@ -571,7 +571,7 @@ export default function CounterSetup({ branches }: Props) {
                   </p>
 
                   {/* Branch list — from Inertia props (no loading state needed) */}
-                  {branches.length === 0 ? (
+                  {branches?.length === 0 ? (
                     <div className="text-center py-8" style={{ color: "rgba(248,250,252,0.35)" }}>
                       <p style={{ fontSize: "36px", marginBottom: "10px" }}>🏢</p>
                       <p style={{ fontSize: "14px" }}>No active branches found.</p>
@@ -579,7 +579,7 @@ export default function CounterSetup({ branches }: Props) {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2.5">
-                      {branches.map((b, i) => (
+                      {branches?.map((b, i) => (
                         <SelectCard
                           key={b.id}
                           index={i}
@@ -641,7 +641,7 @@ export default function CounterSetup({ branches }: Props) {
                   </div>
 
                   {/* Counter list — fetched from API */}
-                  {counters.length === 0 ? (
+                  {counters?.length === 0 ? (
                     <div className="text-center py-8" style={{ color: "rgba(248,250,252,0.35)" }}>
                       <p style={{ fontSize: "36px", marginBottom: "10px" }}>🖥️</p>
                       <p style={{ fontSize: "14px" }}>No active counters in this branch.</p>
@@ -651,7 +651,7 @@ export default function CounterSetup({ branches }: Props) {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2.5">
-                      {counters.map((c, i) => (
+                      {counters?.map((c, i) => (
                         <SelectCard
                           key={c.id}
                           index={i}
@@ -710,7 +710,7 @@ export default function CounterSetup({ branches }: Props) {
 
                   {/* Manual submit button for 4–5 digit PINs */}
                   <AnimatePresence>
-                    {pin.length >= 4 && pin.length < 6 && !submitting && (
+                    {pin?.length >= 4 && pin?.length < 6 && !submitting && (
                       <motion.button
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
