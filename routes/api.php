@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\Route;
 // PUBLIC API ROUTES (no authentication required)
 // ─────────────────────────────────────────────────────────────────────────────
 
+Route::get('/health', function () {
+    return response()->json(['status' => 'ok']);
+});
+
 // Counter Device Setup (Step 1-3 of counter login flow)
 Route::get('/branches/{branch}/counters', [Countersetupcontroller::class, 'counters']);
 Route::post('/counter/activate-device', [Countersetupcontroller::class, 'activateDevice']);
